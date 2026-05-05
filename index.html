@@ -499,7 +499,13 @@ async function sheetsAppend(sheet, values) {
     });
     setSyncing(false);
     return true;
-  } catch(e) { setSyncing(false, true); showToast('Error saving: ' + e.message, 'error'); return false; }
+  } catch(e) {
+    setSyncing(false, true);
+    const msg = (e && e.result && e.result.error && e.result.error.message)
+      || (e && e.message) || String(e);
+    showToast('Error saving: ' + msg, 'error');
+    return false;
+  }
 }
 
 async function sheetsUpdate(sheet, rowNum, values) {
@@ -537,6 +543,29 @@ function setSyncing(syncing, error=false) {
   if (error) { el.textContent = '● Error'; el.className = 'sync-indicator error'; }
   else if (syncing) { el.textContent = '● Syncing...'; el.className = 'sync-indicator syncing'; }
   else { el.textContent = '● Synced'; el.className = 'sync-indicator'; }
+}
+
+// Batch append multiple rows to a sheet in ONE API call
+async function sheetsBatchAppend(sheet, rowsArray) {
+  if (!rowsArray || !rowsArray.length) return true;
+  setSyncing(true);
+  try {
+    await gapi.client.sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: sheet + '!A1',
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: { values: rowsArray }
+    });
+    setSyncing(false);
+    return true;
+  } catch(e) {
+    setSyncing(false, true);
+    const msg = (e && e.result && e.result.error && e.result.error.message)
+      || (e && e.message) || String(e);
+    showToast('Error batch: ' + msg, 'error');
+    return false;
+  }
 }
 
 // ─── INIT STRUCTURE ─────────────────────────────────────────────────────────
@@ -1186,25 +1215,34 @@ async function createProject() {
   const ok = await sheetsAppend('proyectos', projValues);
   if (!ok) return;
   DB.proyectos.push(proj);
-  let taskCount = 0;
+  // Build all tasks and fields in memory, then batch-write to Sheet
   const activeTasks = templateTasks || STANDARD_TASKS;
+  const taskRows = [];
+  const fieldRows = [];
   for (const tpl of activeTasks) {
     const taskId = genId();
     const task = {id:taskId, proyecto_id:id, fase:tpl.fase, nombre:tpl.nombre, rol:tpl.rol, usuario_id:'', start_day:String(tpl.start_day), duracion:String(tpl.duracion), done:'false', creado_en:now};
-    await sheetsAppend('tareas', SHEET_HEADERS.tareas.map(h => task[h] || ''));
+    taskRows.push(SHEET_HEADERS.tareas.map(h => task[h] || ''));
     DB.tareas.push(task);
-    for (const campo of tpl.campos) {
+    for (const campo of (tpl.campos||[])) {
       const fid = genId();
       const field = {id:fid, tarea_id:taskId, clave:campo.label.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''), label:campo.label, tipo:campo.tipo, requerido:campo.req?'true':'false', valor:'', actualizado_en:now};
-      await sheetsAppend('campos_tarea', SHEET_HEADERS.campos_tarea.map(h => field[h] || ''));
+      fieldRows.push(SHEET_HEADERS.campos_tarea.map(h => field[h] || ''));
       DB.campos_tarea.push(field);
     }
-    taskCount++;
+  }
+  // Single batch write for all tasks, then chunks for all fields
+  showToast('Guardando tareas en Google Sheets...', 'info');
+  try { await sheetsBatchAppend('tareas', taskRows); } catch(e) { console.warn('tareas batch warn:', e); }
+  showToast('Guardando campos...', 'info');
+  const chunkSize = 40;
+  for (let i = 0; i < fieldRows.length; i += chunkSize) {
+    try { await sheetsBatchAppend('campos_tarea', fieldRows.slice(i, i + chunkSize)); } catch(e) { console.warn('campos batch warn:', e); }
   }
   renderProjectSelector();
   renderOverview();
   loadProject(id);
-  showToast('Proyecto creado con '+taskCount+' tareas ✓', 'success');
+  showToast('Proyecto creado con '+taskRows.length+' tareas ✓', 'success');
   // Trigger assignment modal for fases 1-3
   setTimeout(() => openResourceAssignmentModal(id, 'early'), 600);
 }
