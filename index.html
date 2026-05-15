@@ -252,8 +252,8 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 
 <!-- AUTH SCREEN -->
 <div id="auth-screen">
-  <div style="margin-bottom:24px">
-    <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <div style="margin-bottom:28px">
+    <svg width="48" height="48" viewBox="0 0 52 52" fill="none">
       <circle cx="10" cy="10" r="5" fill="#c9a96e"/><circle cx="26" cy="10" r="5" fill="#c9a96e"/>
       <circle cx="42" cy="10" r="5" fill="#c9a96e"/><circle cx="10" cy="26" r="5" fill="#c9a96e"/>
       <circle cx="26" cy="26" r="5" fill="#c9a96e"/><circle cx="42" cy="26" r="5" fill="#c9a96e"/>
@@ -263,48 +263,11 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
   </div>
   <div class="auth-logo">MOLVO <b>FILMS</b></div>
   <div class="auth-sub">STUDIO · PROJECT MANAGEMENT</div>
-
-  <!-- Molvo login form -->
-  <div id="login-step1" style="width:320px;margin-bottom:20px">
-    <div style="margin-bottom:10px">
-      <label style="font-size:10px;letter-spacing:0.1em;color:#666;display:block;margin-bottom:4px">USUARIO</label>
-      <input id="login-user" type="text" placeholder="nombre_usuario" autocomplete="username"
-        style="width:100%;padding:10px 14px;border:1px solid #333;border-radius:4px;background:#1a1a1a;color:#f7f4ee;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:0.04em"
-        onkeydown="if(event.key==='Enter')molvoLogin()">
-    </div>
-    <div style="margin-bottom:16px">
-      <label style="font-size:10px;letter-spacing:0.1em;color:#666;display:block;margin-bottom:4px">CONTRASEÑA</label>
-      <input id="login-pass" type="password" placeholder="••••••••" autocomplete="current-password"
-        style="width:100%;padding:10px 14px;border:1px solid #333;border-radius:4px;background:#1a1a1a;color:#f7f4ee;font-family:'DM Mono',monospace;font-size:12px"
-        onkeydown="if(event.key==='Enter')molvoLogin()">
-    </div>
-    <button onclick="molvoLogin()" style="width:100%;padding:12px;background:var(--gold);color:#0a0a0a;border:none;border-radius:4px;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:0.1em;cursor:pointer;font-weight:500">
-      INGRESAR
-    </button>
-    <div id="auth-status" style="margin-top:12px;font-size:11px;color:#666;text-align:center;min-height:16px"></div>
-  </div>
-
-  <!-- Step 2 shown after credentials verified -->
-  <div id="login-step2" style="display:none;width:320px;text-align:center;margin-bottom:20px">
-    <div style="font-size:12px;color:#c9a96e;margin-bottom:16px;letter-spacing:0.06em">✓ Credenciales verificadas</div>
-    <div style="font-size:11px;color:#666;margin-bottom:16px">Haz clic para conectar con Google y acceder al sistema</div>
-    <button id="btn-google-connect" onclick="connectGoogle()" style="width:100%;padding:13px;background:var(--white);color:#0a0a0a;border:1px solid var(--gold);border-radius:4px;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:0.08em;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px">
-      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-      Conectar con Google
-    </button>
-    <button onclick="currentMolvoUser=null;document.getElementById('login-step2').style.display='none';document.getElementById('login-step1').style.display='block';" style="margin-top:10px;background:none;border:none;cursor:pointer;font-size:10px;color:#555;font-family:'DM Mono',monospace">← Volver</button>
-  </div>
-
-  <div style="display:flex;align-items:center;gap:12px;width:320px;margin-bottom:20px">
-    <div style="flex:1;height:0.5px;background:#333"></div>
-    <span style="font-size:10px;color:#444;letter-spacing:0.1em">O CONTINUAR CON</span>
-    <div style="flex:1;height:0.5px;background:#333"></div>
-  </div>
-
   <button class="auth-btn" onclick="signIn()">
     <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-    Sign in with Google
+    Ingresar con Google
   </button>
+  <div class="auth-status" id="auth-status">Cada usuario entra con su cuenta de Google</div>
 </div>
 
 <!-- LOADING -->
@@ -874,14 +837,14 @@ function openEditUserModal(userId) {
     <div class="form-grid">
       <div class="form-group"><label class="flabel">Nombre completo</label>
         <input class="finput" id="eu-nombre" value="${u.nombre}"></div>
+      <div class="form-group"><label class="flabel">Email Google (para acceso)</label>
+        <input class="finput" id="eu-email" value="${u.email||''}" placeholder="usuario@gmail.com"></div>
       <div class="form-group"><label class="flabel">Rol del sistema</label>
         <select class="fselect" id="eu-rol">
-          <option value="usuario"${u.rol==='usuario'?' selected':''}>Usuario</option>
-          <option value="usuario_clave"${u.rol==='usuario_clave'?' selected':''}>Usuario Clave</option>
-          <option value="admin"${u.rol==='admin'?' selected':''}>Administrador</option>
+          <option value="usuario"${u.rol==='usuario'?' selected':''}>Usuario — Completar tareas</option>
+          <option value="usuario_clave"${u.rol==='usuario_clave'?' selected':''}>Usuario Clave — Crear proyectos</option>
+          <option value="admin"${u.rol==='admin'?' selected':''}>Administrador — Acceso total</option>
         </select></div>
-      <div class="form-group full"><label class="flabel">Nueva contraseña (dejar vacío para no cambiar)</label>
-        <input type="password" class="finput" id="eu-pass" placeholder="Nueva contraseña"></div>
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="openUserManagementModal()">Cancelar</button>
@@ -893,10 +856,9 @@ async function saveEditUser(userId) {
   const users = getMolvoUsers();
   const u = users.find(u=>u.id===userId);
   if (!u) return;
-  u.nombre = document.getElementById('eu-nombre').value.trim()||u.nombre;
+  u.nombre = document.getElementById('eu-nombre')?.value.trim()||u.nombre;
+  u.email = document.getElementById('eu-email')?.value.trim()||u.email||'';
   u.rol = document.getElementById('eu-rol').value;
-  const newPass = document.getElementById('eu-pass').value;
-  if (newPass) u.passwordHash = await hashPassword(newPass);
   saveMolvoUsers(users);
   openUserManagementModal();
   showToast('Usuario actualizado ✓','success');
@@ -934,27 +896,67 @@ async function afterSignIn() {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('loading-overlay').style.display = 'flex';
 
-  // Get Google user info
+  // Get Google user profile
+  let googleEmail = '', googleName = '', googlePicture = '';
   try {
     const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: 'Bearer ' + accessToken }
     });
     const u = await r.json();
-    // If no molvo user logged in yet, treat Google login as admin
-    if (!currentMolvoUser) {
-      await initMolvoUsers();
-      currentMolvoUser = { username: 'admin', nombre: u.name||u.email, rol: 'admin', empleadoId: null };
-    }
-    const avatar = document.getElementById('user-avatar');
-    if (avatar && u.picture) { avatar.src = u.picture; avatar.style.display='block'; }
-    const initials = document.getElementById('user-avatar-initials');
-    if (initials) initials.style.display='none';
+    googleEmail = u.email || '';
+    googleName = u.name || u.email || '';
+    googlePicture = u.picture || '';
   } catch(e) {}
 
-  setLoading('Initializing sheet structure...');
+  setLoading('Cargando datos...');
   await initSheetStructure(true);
-  setLoading('Loading data...');
   await loadAllData();
+
+  // Match Google email against internal user table
+  const molvoUsers = getMolvoUsers();
+  let matched = molvoUsers.find(u => u.email && u.email.toLowerCase() === googleEmail.toLowerCase());
+
+  if (!matched) {
+    // Auto-register: check if email matches an empleado
+    const emp = DB.usuarios.find(u => u.email && u.email.toLowerCase() === googleEmail.toLowerCase());
+    if (emp) {
+      // Create system user for this employee
+      const uname = emp.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+      const newUser = { id: genId(), username: uname, nombre: emp.nombre, rol: 'usuario', email: googleEmail, passwordHash: '', empleadoId: emp.id, activo: true };
+      molvoUsers.push(newUser);
+      saveMolvoUsers(molvoUsers);
+      matched = newUser;
+    }
+  }
+
+  if (!matched) {
+    // Check if this is the first user ever (bootstrap admin)
+    if (molvoUsers.length === 0 || molvoUsers.every(u=>!u.email)) {
+      const adminUser = molvoUsers.find(u=>u.username==='admin') || { id:'admin', username:'admin', nombre:googleName, rol:'admin', empleadoId:null, activo:true };
+      adminUser.email = googleEmail;
+      adminUser.nombre = googleName;
+      if (!molvoUsers.find(u=>u.id===adminUser.id)) molvoUsers.push(adminUser);
+      saveMolvoUsers(molvoUsers);
+      matched = adminUser;
+    } else {
+      // Email not authorized
+      document.getElementById('loading-overlay').style.display = 'none';
+      document.getElementById('auth-screen').style.display = 'flex';
+      document.getElementById('auth-status').textContent = googleEmail + ' no tiene acceso. Contacta al administrador.';
+      document.getElementById('auth-status').style.color = '#a83838';
+      if (accessToken) google.accounts.oauth2.revoke(accessToken);
+      return;
+    }
+  }
+
+  currentMolvoUser = matched;
+
+  // Set avatar
+  const avatar = document.getElementById('user-avatar');
+  if (avatar && googlePicture) { avatar.src = googlePicture; avatar.style.display='block'; }
+  const initials = document.getElementById('user-avatar-initials');
+  if (initials && !googlePicture) initials.textContent = googleName.substring(0,2).toUpperCase();
+
   document.getElementById('loading-overlay').style.display = 'none';
   document.getElementById('main-app').style.display = 'block';
   applyRolePermissions();
@@ -962,6 +964,11 @@ async function afterSignIn() {
   renderProjectSelector();
   renderClientList();
   renderConfig();
+
+  if (currentMolvoUser.rol !== 'admin') {
+    setTimeout(()=>{ showPanelById('myday'); document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active')); document.getElementById('nav-myday')?.classList.add('active'); }, 100);
+  }
+  showToast('Bienvenido, ' + currentMolvoUser.nombre + ' ✓', 'success');
 }
 
 function signOut() {
@@ -3078,7 +3085,7 @@ function renderUserDetail(userId) {
             <div style="width:8px;height:8px;border-radius:50%;background:var(--green)"></div>
             <span style="font-size:11px">Usuario activo</span>
           </div>
-          <div style="font-size:11px;color:var(--gray);margin-bottom:4px">Usuario: <b style="color:var(--black)">${sysUser.username}</b></div>
+          <div style="font-size:11px;color:var(--gray);margin-bottom:4px">Email Google: <b style="color:var(--black)">${sysUser.email||'Sin email asignado'}</b></div>
           <div style="margin-bottom:8px"><span style="font-size:9px;padding:2px 7px;border-radius:3px;background:${roleLabel.color}22;color:${roleLabel.color}">${roleLabel.label}</span></div>
           ${isAdmin?`
           <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border)">
@@ -3088,8 +3095,9 @@ function renderUserDetail(userId) {
               <option value="usuario_clave"${sysUser.rol==='usuario_clave'?' selected':''}>Usuario Clave — Crear proyectos</option>
               <option value="admin"${sysUser.rol==='admin'?' selected':''}>Administrador — Acceso total</option>
             </select>
-            <input type="password" id="ud-pass-${u.id}" class="finput" placeholder="Nueva contraseña (dejar vacío = sin cambio)" style="font-size:11px">
-            <button class="btn-primary" style="font-size:10px;padding:5px" onclick="saveUserAccess('${u.id}','${sysUser.id}')">Guardar cambios de acceso</button>
+            <input class="finput" id="ud-email-${u.id}" placeholder="email@gmail.com" value="${sysUser.email||''}" style="font-size:11px" oninput="(()=>{const us=getMolvoUsers();const su=us.find(u=>u.id==='${sysUser.id}');if(su){su.email=this.value;saveMolvoUsers(us);}})()">
+            <div style="font-size:10px;color:var(--gray);margin-top:2px">El usuario ingresa con esta cuenta de Google</div>
+            <button class="btn-primary" style="font-size:10px;padding:5px;margin-top:6px" onclick="saveUserAccess('${u.id}','${sysUser.id}')">Guardar rol</button>
           </div>`:''}
         ` : `
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
@@ -3117,8 +3125,6 @@ async function saveUserAccess(empId, sysUserId) {
   const su = users.find(u=>u.id===sysUserId);
   if (!su) return;
   su.rol = document.getElementById('ud-rol-'+empId)?.value || su.rol;
-  const newPass = document.getElementById('ud-pass-'+empId)?.value;
-  if (newPass) su.passwordHash = await hashPassword(newPass);
   saveMolvoUsers(users);
   renderUserDetail(empId);
   showToast('Acceso actualizado ✓','success');
