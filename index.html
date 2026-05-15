@@ -608,7 +608,7 @@ async function initMolvoUsers() {
   const existing = getMolvoUsers();
   if (existing.find(u=>u.username==='admin')) return;
   // Create admin
-  const adminHash = await hashPassword('@dminm0lv0124');
+  const adminHash = await hashPassword('12346');
   const users = [{
     id: 'admin', username: 'admin', nombre: 'Administrador',
     rol: 'admin', passwordHash: adminHash, empleadoId: null, activo: true
