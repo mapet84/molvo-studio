@@ -744,7 +744,7 @@ const SHEET_HEADERS = {
   campos_tarea:   ['id','tarea_id','clave','label','tipo','requerido','valor','actualizado_en','opciones'],
   clientes:       ['id','nombre','rfc','tipo','dias_pago','metodo_pago','contacto_nombre','cargo','email_comercial','email_facturacion','email_aprobacion','telefono','whatsapp','notas','creado_en'],
   contactos_cliente: ['id','cliente_id','rol_cliente','nombre','telefono','email','whatsapp','medio_preferido'],
-  accionables_pago: ['id','cliente_id','label','porcentaje','tarea_ref'],
+  accionables_pago: ['id','cliente_id','label','porcentaje','tarea_ref','monto_base'],
   usuarios:       ['id','nombre','iniciales','roles','email','telefono','whatsapp','color','activo'],
   asignaciones:   ['id','tarea_id','usuario_id','proyecto_id','fecha_inicio','fecha_fin'],
   catalogo_tareas: ['id','fase','nombre','rol_molvo','rol_cliente','duracion_dias','descripcion','creado_en'],
@@ -938,6 +938,169 @@ function fase3Completa(proyId) {
   return tasks.length > 0 && tasks.every(t => t.done === 'true');
 }
 
+// ─── ACCIONABLES DE PAGO ─────────────────────────────────────────────────────
+function openAcdonablesModal(clienteId) {
+  const client = DB.clientes.find(c=>c.id===clienteId);
+  if (!client) return;
+  let accs = DB.accionables_pago.filter(a=>a.cliente_id===clienteId);
+  // All available task names from catalog
+  const taskNames = (catalogTareas||[]).map(t=>t.nombre).concat(
+    (STANDARD_TASKS||[]).map(t=>t.nombre)
+  ).filter((n,i,a)=>a.indexOf(n)===i).sort();
+
+  function renderAcc() {
+    const el = document.getElementById('acc-list');
+    if (!el) return;
+    const totalPct = accs.reduce((s,a)=>s+parseFloat(a.porcentaje||0),0);
+    el.innerHTML = accs.map((a,i)=>`
+      <div style="display:grid;grid-template-columns:1fr 140px 80px 70px 36px;gap:6px;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--border)">
+        <div>
+          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Nombre del cobro</div>
+          <input value="${a.label||''}" onchange="accs[${i}].label=this.value" style="width:100%;padding:4px 7px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:11px">
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Tarea que lo activa</div>
+          <select onchange="accs[${i}].tarea_ref=this.value" style="width:100%;padding:4px 5px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:10px">
+            <option value="">— Seleccionar tarea —</option>
+            ${taskNames.map(n=>`<option${a.tarea_ref===n?' selected':''}>${n}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Porcentaje</div>
+          <div style="display:flex;align-items:center;gap:3px">
+            <input type="number" min="0" max="100" value="${a.porcentaje||''}" onchange="accs[${i}].porcentaje=this.value;renderAccList(accs)" style="width:100%;padding:4px 5px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:11px;text-align:center">
+            <span style="font-size:11px;color:var(--gray)">%</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Días pago</div>
+          <div style="padding:4px 7px;background:var(--cream);border-radius:4px;font-size:11px;text-align:center">${client.dias_pago||30}</div>
+        </div>
+        <div style="padding-top:18px">
+          <button onclick="accs.splice(${i},1);renderAccList(accs)" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:16px">✕</button>
+        </div>
+      </div>`).join('')+
+      `<div style="padding:10px 0;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:11px;color:${Math.abs(totalPct-100)<0.1?'var(--green)':totalPct>100?'var(--red)':'var(--warn)'}">
+          Total: <b>${Math.round(totalPct*10)/10}%</b> ${Math.abs(totalPct-100)<0.1?' ✓':totalPct>100?' ⚠ supera 100%':' (debe sumar 100%)'}
+        </div>
+        <button onclick="accs.push({id:genId(),cliente_id:'${clienteId}',label:'Nuevo cobro',tarea_ref:'',porcentaje:'0',monto_base:''});renderAccList(accs)" style="font-size:10px;padding:3px 10px;border:0.5px solid var(--border);border-radius:4px;background:none;cursor:pointer;font-family:'DM Mono',monospace">+ Agregar</button>
+      </div>`;
+  }
+
+  // Store accs in closure for modal
+  window._editingAccs = accs;
+  window._editingAccClientId = clienteId;
+
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Accionables de pago — ${client.nombre}</div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:14px">
+      Cada accionable se activa al completar la tarea seleccionada. Se generará un hito de cobro en el proyecto con los días de pago del cliente (${client.dias_pago||30} días · ${client.metodo_pago||'Transferencia'}).
+    </div>
+    <div id="acc-list"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveAcdonables('${clienteId}')">Guardar</button>
+    </div>`;
+
+  // Make renderAccList accessible inside modal
+  window.renderAccList = function(a) { accs=a; window._editingAccs=a; renderAcc(); };
+  document.getElementById('modal-overlay').classList.add('open');
+  renderAcc();
+}
+
+async function saveAcdonables(clienteId) {
+  const newAccs = window._editingAccs || [];
+  const client = DB.clientes.find(c=>c.id===clienteId);
+
+  // Remove old accionables from sheet
+  const oldAccs = DB.accionables_pago.filter(a=>a.cliente_id===clienteId);
+  const oldRows = oldAccs.map(a=>getRowNum('accionables_pago',a.id)).filter(r=>r>0).sort((a,b)=>b-a);
+  for (const row of oldRows) await sheetsDeleteRow('accionables_pago', row);
+
+  // Remove from DB
+  DB.accionables_pago = DB.accionables_pago.filter(a=>a.cliente_id!==clienteId);
+
+  // Save new ones
+  for (const a of newAccs) {
+    if (!a.id) a.id = genId();
+    a.cliente_id = clienteId;
+    const ok = await sheetsAppend('accionables_pago', SHEET_HEADERS.accionables_pago.map(h=>a[h]||''));
+    if (ok) DB.accionables_pago.push(a);
+  }
+
+  closeModal();
+  selectClient(clienteId);
+  showToast('Accionables guardados ✓','success');
+}
+
+// ─── BILLING HITO: auto-create cobro task when accionable task completes ──────
+async function createBillingHito(task, proj, billing, client) {
+  const now = new Date().toISOString();
+  // Calculate due date: task end date + client payment days
+  const pStart = new Date(proj.fecha_inicio||'2025-01-01');
+  const taskEndDay = (parseInt(task.start_day)||0) + hoursToDays(parseInt(task.duracion)||8);
+  const taskEndDate = new Date(pStart.getTime() + taskEndDay*864e5);
+  const dueDate = new Date(taskEndDate);
+  dueDate.setDate(dueDate.getDate() + parseInt(client.dias_pago||30));
+  const dueDateStr = dueDate.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
+
+  // Find finanzas user
+  const finanzasUser = DB.usuarios.find(u=>(u.roles||'').toLowerCase().includes('finanzas'));
+  // Find contacto finanzas
+  const ctFinanzas = DB.contactos_cliente.find(ct=>ct.cliente_id===client.id&&ct.rol_cliente==='Contacto de Finanzas');
+
+  // Determine presupuesto for monto calculation
+  const presupuesto = parseFloat(proj.presupuesto||0);
+  const monto = presupuesto > 0 ? Math.round(presupuesto * parseFloat(billing.porcentaje||0) / 100) : 0;
+  const montoStr = monto > 0 ? new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(monto) : '(monto pendiente)';
+
+  const hitoNombre = 'Cobro por ' + billing.label;
+  const hitoId = genId();
+
+  // Place hito right after the triggering task (same start_day + duration)
+  const hitoStartDay = taskEndDay;
+
+  const hito = {
+    id: hitoId,
+    proyecto_id: proj.id,
+    fase: task.fase,
+    nombre: hitoNombre,
+    rol: 'Finanzas',
+    usuario_id: finanzasUser ? finanzasUser.id : '',
+    start_day: String(hitoStartDay),
+    duracion: String(parseInt(client.dias_pago||30)*8),
+    done: 'false',
+    creado_en: now,
+    catalogo_id: ''
+  };
+
+  const ok = await sheetsAppend('tareas', SHEET_HEADERS.tareas.map(h=>hito[h]||''));
+  if (!ok) return;
+  DB.tareas.push(hito);
+
+  // Add fields to hito
+  const hitoFields = [
+    {label:'Porcentaje a cobrar',tipo:'texto_corto',req:true,valor:billing.porcentaje+'%'},
+    {label:'Monto estimado',tipo:'texto_corto',req:true,valor:montoStr},
+    {label:'Fecha límite de cobro',tipo:'texto_corto',req:true,valor:dueDateStr},
+    {label:'Método de pago',tipo:'texto_corto',req:false,valor:client.metodo_pago||''},
+    {label:'Contacto de Finanzas cliente',tipo:'texto_corto',req:false,valor:ctFinanzas?ctFinanzas.nombre+' · '+ctFinanzas.email:''},
+    {label:'Factura enviada',tipo:'opcion_multiple',req:true,valor:'',opciones:'No|Sí'},
+    {label:'Pago recibido',tipo:'opcion_multiple',req:true,valor:'',opciones:'No|Sí|Parcial'},
+  ];
+
+  for (const f of hitoFields) {
+    const fid = genId();
+    const field = {id:fid,tarea_id:hitoId,clave:f.label.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''),label:f.label,tipo:f.tipo,requerido:f.req?'true':'false',valor:f.valor||'',actualizado_en:now,opciones:f.opciones||''};
+    await sheetsAppend('campos_tarea', SHEET_HEADERS.campos_tarea.map(h=>field[h]||''));
+    DB.campos_tarea.push(field);
+  }
+
+  renderProject();
+  showToast('Hito de cobro creado: '+hitoNombre+' · '+montoStr,'success');
+}
+
 async function tryComplete(taskId, phColor) {
   const task = DB.tareas.find(t => t.id === taskId);
   if (!task) return;
@@ -974,6 +1137,21 @@ async function tryComplete(taskId, phColor) {
   // Last task of fase 3 just done → assign fases 4-7
   if (task.nombre === FASE3_LAST && fase3Completa(task.proyecto_id)) {
     setTimeout(() => openResourceAssignmentModal(task.proyecto_id, 'late'), 400);
+  }
+
+  // Check if this task triggers a billing accionable
+  const proj2 = DB.proyectos.find(p=>p.id===task.proyecto_id);
+  const client2 = proj2 ? DB.clientes.find(c=>c.id===proj2.cliente_id) : null;
+  if (client2) {
+    const accs2 = DB.accionables_pago.filter(a=>a.cliente_id===client2.id&&a.tarea_ref===task.nombre);
+    // Only create hito if it doesn't already exist
+    for (const acc of accs2) {
+      const hitoName = 'Cobro por '+acc.label;
+      const alreadyExists = DB.tareas.find(t=>t.proyecto_id===task.proyecto_id&&t.nombre===hitoName);
+      if (!alreadyExists) {
+        setTimeout(()=>createBillingHito(task,proj2,acc,client2), 500);
+      }
+    }
   }
 }
 
@@ -1059,14 +1237,46 @@ function openTask(taskId) {
         ${u.whatsapp ? `<div class="contact-row"><span style="font-size:10px;font-weight:500;width:14px">WA</span><span class="contact-val">${u.whatsapp}</span><span class="contact-type-lbl">whatsapp</span></div>` : ''}
       </div>` : `<div class="contact-card"><div class="contact-card-title">Responsable</div><div style="color:var(--lgray);font-size:11px;padding:8px 0">Sin usuario asignado</div></div>`}
 
-      ${client ? `<div class="contact-card${billing?' billing':''}">
-        <div class="contact-card-title">Cliente — ${client.nombre}</div>
-        <div style="margin-bottom:8px"><div style="font-size:12px">${client.contacto_nombre||'—'}</div><div style="font-size:10px;color:var(--gray)">${client.cargo||''}</div></div>
-        ${client.email_comercial ? `<div class="contact-row"><span style="font-size:11px;width:14px">✉</span><span class="contact-val">${client.email_comercial}</span><span class="contact-type-lbl">comercial</span></div>` : ''}
-        ${client.email_aprobacion ? `<div class="contact-row"><span style="font-size:11px;width:14px">✉</span><span class="contact-val">${client.email_aprobacion}</span><span class="contact-type-lbl">aprobación</span></div>` : ''}
-        ${billing && client.email_facturacion ? `<div class="contact-row"><span style="font-size:11px;width:14px">✉</span><span class="contact-val">${client.email_facturacion}</span><span class="contact-type-lbl">facturación</span></div>` : ''}
-        ${client.whatsapp ? `<div class="contact-row"><span style="font-size:10px;font-weight:500;width:14px">WA</span><span class="contact-val">${client.whatsapp}</span><span class="contact-type-lbl">whatsapp</span></div>` : ''}
-      </div>` : `<div class="contact-card"><div class="contact-card-title">Cliente</div><div style="color:var(--lgray);font-size:11px;padding:8px 0">Sin cliente asignado</div></div>`}
+      ${client ? (() => {
+        // Find catalog task to get rol_cliente
+        const catTask = catalogTareas ? catalogTareas.find(ct=>ct.nombre===task.nombre) : null;
+        const rolCliente = catTask ? catTask.rol_cliente : '';
+        const allContacts = DB.contactos_cliente.filter(ct=>ct.cliente_id===client.id);
+        const ROL_ICONS_CT = {'Contacto General':'👤','Contacto Comercial':'💼','Contacto de Finanzas':'💰','Contacto de Arte':'🎨'};
+
+        // Determine which contacts to show
+        let contactsToShow = [];
+        if (rolCliente === 'Todos los contactos de cliente') {
+          contactsToShow = allContacts;
+        } else if (rolCliente && allContacts.length) {
+          const match = allContacts.filter(ct=>ct.rol_cliente===rolCliente);
+          contactsToShow = match.length ? match : allContacts.slice(0,1);
+        }
+
+        const contactRows = contactsToShow.length
+          ? contactsToShow.map(ct=>`
+            <div class="contact-row" style="flex-direction:column;align-items:flex-start;gap:3px;padding:5px 0">
+              <div style="display:flex;align-items:center;gap:5px">
+                <span style="font-size:11px">${ROL_ICONS_CT[ct.rol_cliente]||'👤'}</span>
+                <span style="font-size:11px;font-weight:400">${ct.nombre||'—'}</span>
+                <span class="contact-type-lbl">${ct.rol_cliente}</span>
+                ${ct.medio_preferido==='true'?'<span style="font-size:9px;color:var(--accent)">★</span>':''}
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;padding-left:18px">
+                ${ct.email?`<span style="font-size:10px;color:var(--gray)">✉ ${ct.email}</span>`:''}
+                ${ct.telefono?`<span style="font-size:10px;color:var(--gray)">☎ ${ct.telefono}</span>`:''}
+                ${ct.whatsapp?`<span style="font-size:10px;color:var(--gray)">WA ${ct.whatsapp}</span>`:''}
+              </div>
+            </div>`).join('')
+          : (client.contacto_nombre ? `<div class="contact-row"><span class="contact-val">${client.contacto_nombre} · ${client.cargo||''}</span></div>` +
+            (client.email_comercial?`<div class="contact-row"><span style="font-size:11px;width:14px">✉</span><span class="contact-val">${client.email_comercial}</span><span class="contact-type-lbl">comercial</span></div>`:'') +
+            (client.whatsapp?`<div class="contact-row"><span style="font-size:10px;width:14px">WA</span><span class="contact-val">${client.whatsapp}</span></div>`:'') : '');
+
+        return `<div class="contact-card${billing?' billing':''}">
+          <div class="contact-card-title">Cliente — ${client.nombre}${rolCliente?` <span style="font-size:9px;padding:1px 5px;border-radius:2px;background:var(--cream);color:var(--gray)">${rolCliente}</span>`:''}</div>
+          ${contactRows || '<div style="color:var(--lgray);font-size:11px;padding:4px 0">Sin contactos registrados en CRM</div>'}
+        </div>`;
+      })() : `<div class="contact-card"><div class="contact-card-title">Cliente</div><div style="color:var(--lgray);font-size:11px;padding:8px 0">Sin cliente asignado</div></div>`}
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -1082,6 +1292,7 @@ function openTask(taskId) {
 
     <div style="display:flex;gap:8px;padding-top:14px;border-top:0.5px solid var(--border)">
       <button class="complete-btn ${btnClass}" onclick="tryComplete('${task.id}','${phColor}')">${btnLabel}</button>
+      <button onclick="openEditTaskModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--border);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--gray)" title="Editar tarea">✎ Editar</button>
     </div>`;
 
   wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -1534,27 +1745,76 @@ async function createProject() {
 }
 
 // ----------------------------------------
-function openAddTaskModal(phase, phColor) {
+function openAddTaskModal(phase, phColor, editTaskId=null) {
   const users = DB.usuarios;
+  const et = editTaskId ? DB.tareas.find(t=>t.id===editTaskId) : null;
+  const title = et ? 'Editar tarea' : 'Nueva tarea';
+  const btnLabel = et ? 'Guardar cambios' : 'Agregar tarea';
   document.getElementById('modal-body').innerHTML = `
-    <div class="modal-title">Nueva tarea</div>
+    <div class="modal-title">${title}</div>
     <div style="font-size:11px;color:var(--gray);margin-bottom:12px">Fase: <span style="color:${phColor}">${phase}</span></div>
     <div class="form-grid">
-      <div class="form-group full"><label class="flabel">Nombre de la tarea</label><input class="finput" id="at-name" placeholder="Descripción de la tarea"></div>
+      <div class="form-group full"><label class="flabel">Nombre de la tarea</label>
+        <input class="finput" id="at-name" placeholder="Descripción de la tarea" value="${et?et.nombre:''}"></div>
       <div class="form-group"><label class="flabel">Rol responsable</label>
-        <select class="fselect" id="at-role">${ALL_ROLES.map(r=>`<option>${r}</option>`).join('')}</select>
+        <select class="fselect" id="at-role">${ALL_ROLES.map(r=>`<option${et&&et.rol===r?' selected':''}>${r}</option>`).join('')}</select>
       </div>
       <div class="form-group"><label class="flabel">Usuario asignado</label>
-        <select class="fselect" id="at-user"><option value="">— Sin asignar —</option>${users.map(u=>`<option value="${u.id}">${u.nombre}</option>`).join('')}</select>
+        <select class="fselect" id="at-user">
+          <option value="">— Sin asignar —</option>
+          ${users.map(u=>`<option value="${u.id}"${et&&et.usuario_id===u.id?' selected':''}>${u.nombre}</option>`).join('')}
+        </select>
       </div>
-      <div class="form-group"><label class="flabel">Inicio (días desde inicio proy.)</label><input type="number" class="finput" id="at-start" value="0" min="0"></div>
-      <div class="form-group"><label class="flabel">Duración (horas)</label><input type="number" class="finput" id="at-dur" value="8" min="1" max="999"></div>
+      <div class="form-group"><label class="flabel">Inicio (días desde inicio proyecto)</label>
+        <input type="number" class="finput" id="at-start" value="${et?et.start_day:'0'}" min="0"></div>
+      <div class="form-group"><label class="flabel">Duración (horas)</label>
+        <input type="number" class="finput" id="at-dur" value="${et?et.duracion:'8'}" min="1" max="999"></div>
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn-primary" onclick="createTask('${phase}')">Agregar tarea</button>
+      ${et?`<button class="btn-secondary" style="color:var(--red);border-color:var(--red)" onclick="deleteTaskFromProject('${et.id}')">Eliminar tarea</button>`:''}
+      <button class="btn-primary" onclick="${et?`saveEditTask('${et.id}','${phase}')`:`createTask('${phase}')`}">${btnLabel}</button>
     </div>`;
   document.getElementById('modal-overlay').classList.add('open');
+}
+
+function openEditTaskModal(taskId) {
+  const task = DB.tareas.find(t=>t.id===taskId);
+  if (!task) return;
+  const phColor = PHASE_COLORS[DEFAULT_PHASES.indexOf(task.fase)%PHASE_COLORS.length]||'#888';
+  openAddTaskModal(task.fase, phColor, taskId);
+}
+
+async function saveEditTask(taskId, phase) {
+  const name = document.getElementById('at-name').value.trim();
+  if (!name) { showToast('El nombre es obligatorio','error'); return; }
+  const task = DB.tareas.find(t=>t.id===taskId);
+  if (!task) return;
+  task.nombre = name;
+  task.rol = document.getElementById('at-role').value;
+  task.usuario_id = document.getElementById('at-user').value;
+  task.start_day = document.getElementById('at-start').value;
+  task.duracion = document.getElementById('at-dur').value;
+  const rowNum = getRowNum('tareas', taskId);
+  if (rowNum>=0) await sheetsUpdate('tareas', rowNum, SHEET_HEADERS.tareas.map(h=>task[h]||''));
+  closeModal();
+  renderProject();
+  showToast('Tarea actualizada ✓','success');
+}
+
+async function deleteTaskFromProject(taskId) {
+  if (!confirm('¿Eliminar esta tarea del proyecto?')) return;
+  const rowNum = getRowNum('tareas', taskId);
+  const fieldRows = DB.campos_tarea.filter(f=>f.tarea_id===taskId).map(f=>getRowNum('campos_tarea',f.id)).filter(r=>r>0);
+  if (fieldRows.length) await sheetsDeleteRowsBatch('campos_tarea', fieldRows);
+  if (rowNum>0) await sheetsDeleteRow('tareas', rowNum);
+  DB.tareas = DB.tareas.filter(t=>t.id!==taskId);
+  DB.campos_tarea = DB.campos_tarea.filter(f=>f.tarea_id!==taskId);
+  closeModal();
+  activeTaskId = null;
+  document.getElementById('detail-wrap').style.display='none';
+  renderProject();
+  showToast('Tarea eliminada ✓','success');
 }
 
 async function createTask(phase) {
@@ -1683,11 +1943,19 @@ function selectClient(id) {
         }).join('') : '<div style="font-size:11px;color:var(--lgray);padding:8px 0">Sin contactos registrados. Usa + Agregar.</div>'}
       </div>
       <div class="detail-section-card">
-        <div class="detail-section-name">Accionables de pago</div>
-        ${accionables.map((a,i)=>`<div class="payment-milestone">
-          <div class="pm-pct-circle" style="background:${PHASE_COLORS[i]||'#888'}18;color:${PHASE_COLORS[i]||'#888'}">${a.porcentaje}%</div>
-          <div><div style="font-size:12px">${a.label}</div><div style="font-size:10px;color:var(--gray)">Accionado por: ${a.tarea_ref}</div></div>
-        </div>`).join('') || '<div style="font-size:11px;color:var(--lgray)">Sin accionables configurados</div>'}
+        <div class="detail-section-name" style="display:flex;justify-content:space-between;align-items:center">
+          Accionables de pago
+          <button onclick="openAcdonablesModal('${id}')" style="font-size:9px;padding:2px 8px;border:0.5px solid var(--border);border-radius:4px;background:none;cursor:pointer;font-family:'DM Mono',monospace">✎ Editar</button>
+        </div>
+        ${accionables.length ? accionables.map((a,i)=>`<div class="payment-milestone">
+          <div class="pm-pct-circle" style="background:${PHASE_COLORS[i%7]||'#888'}18;color:${PHASE_COLORS[i%7]||'#888'}">${a.porcentaje}%</div>
+          <div style="flex:1">
+            <div style="font-size:12px">${a.label}</div>
+            <div style="font-size:10px;color:var(--gray)">Tarea: ${a.tarea_ref}</div>
+            <div style="font-size:10px;color:var(--gray)">Cobro a ${c.dias_pago} días · ${c.metodo_pago}</div>
+          </div>
+        </div>`).join('') : '<div style="font-size:11px;color:var(--lgray);padding:6px 0">Sin accionables. Usa ✎ Editar.</div>'}
+        ${accionables.length ? `<div style="font-size:10px;color:var(--gray);margin-top:8px;padding-top:6px;border-top:0.5px solid var(--border)">Total: ${accionables.reduce((s,a)=>s+parseFloat(a.porcentaje||0),0)}%</div>` : ''}
       </div>
     </div>
     ${projs.length?`<div class="detail-section-card">
@@ -1697,6 +1965,7 @@ function selectClient(id) {
     ${c.notas?`<div class="detail-section-card"><div class="detail-section-name">Notas</div><div style="font-size:12px;color:var(--gray);line-height:1.6">${c.notas}</div></div>`:''}
     <div style="margin-top:12px;display:flex;gap:8px">
       <button class="btn-secondary" onclick="openClientModal('${c.id}')">Editar cliente</button>
+      <button class="btn-secondary" onclick="openAcdonablesModal('${c.id}')">$ Accionables de pago</button>
     </div>`;
 }
 
@@ -2776,7 +3045,7 @@ async function importBulkUsers() {
 }
 
 // ─── CATÁLOGO DE TAREAS ──────────────────────────────────────────────────────
-const ROLES_CLIENTE = ['Contacto General','Contacto Comercial','Contacto de Finanzas','Contacto de Arte'];
+const ROLES_CLIENTE = ['Contacto General','Contacto Comercial','Contacto de Finanzas','Contacto de Arte','Todos los contactos de cliente'];
 const MEDIOS_CONTACTO = ['Email','WhatsApp','Teléfono'];
 let activeCatalogId = null;
 
