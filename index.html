@@ -1162,19 +1162,18 @@ async function initSheetStructure(silent=false) {
 
 // ----------------------------------------
 async function loadAllData() {
+  // Reset all sheets first to avoid duplication on refresh
+  Object.keys(SHEET_HEADERS).forEach(sheet => { DB[sheet] = []; });
   for (const sheet of Object.keys(SHEET_HEADERS)) {
     try {
-      // Read actual headers from row 1 to handle schema evolution
       const headerRow = await sheetsGet(sheet + '!1:1');
       const actualHeaders = (headerRow[0] || []).map(h => h.trim());
       const rows = await sheetsGet(sheet + '!A2:Z');
       DB[sheet] = rows.filter(r => r && r[0]).map(r => {
         const obj = {};
-        // Map by actual column name from sheet, not by position
         if (actualHeaders.length) {
           actualHeaders.forEach((h, i) => { if (h) obj[h] = r[i] || ''; });
         } else {
-          // Fallback: use SHEET_HEADERS order
           SHEET_HEADERS[sheet].forEach((h, i) => obj[h] = r[i] || '');
         }
         return obj;
@@ -3563,7 +3562,7 @@ async function deleteProject(projId) {
     }
     const projRowNums = await findRowsByIds('proyectos', [projId]);
     if (projRowNums.length) await sheetsDeleteRowsBatch('proyectos', projRowNums);
-    showToast('Proyecto eliminado ✓', 'success');
+    showToast('Proyecto eliminado ✓ (campos:'+fieldIds.length+' tareas:'+taskIds.length+')', 'success');
   } catch(e) {
     showToast('Error al borrar del Sheet: ' + (e.message||e), 'error');
   }
@@ -4463,12 +4462,12 @@ function showPanelById(name) {
   const btn = document.getElementById('nav-'+name);
   if (btn) btn.classList.add('active');
   if (name==='myday') renderMyDay();
-  if (name==='calendar') renderCalendar();
+  if (name==='calendar') { calYear=calYear||new Date().getFullYear(); calMonth=calMonth!==undefined?calMonth:new Date().getMonth(); renderCalendar(); }
   if (name==='sistema') setTimeout(loadSistemaConfigUI, 50);
+  if (name==='config') setTimeout(()=>{ const el=document.getElementById('config-usuarios'); if(el&&el.style.display!=='none') renderConfig(); },50);
 }
 function showPanel(name) {
   showPanelById(name);
-  // Also handle nav tabs via event if available
   if (event && event.target && event.target.classList.contains('nav-tab')) {
     document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
     event.target.classList.add('active');
