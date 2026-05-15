@@ -1871,8 +1871,7 @@ function parseCsvFile(input) {
   document.getElementById('csv-filename').textContent = file.name;
   const reader = new FileReader();
   reader.onload = (e) => {
-    const lines = e.target.result.split('
-').filter(l => l.trim());
+    const lines = e.target.result.split('\n').filter(l => l.trim());
     if (lines.length < 2) { showToast('CSV vacío o inválido', 'error'); return; }
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z_]/g,''));
     const EXPECTED = ['nombre','rfc','tipo','dias_pago','metodo_pago','contacto_nombre','cargo','email_comercial','email_facturacion','email_aprobacion','telefono','whatsapp','notas'];
@@ -1955,8 +1954,7 @@ function parseUserCsv(input) {
 }
 
 function previewBulkUsers(text) {
-  const lines = text.split('
-').filter(l => l.trim());
+  const lines = text.split('\n').filter(l => l.trim());
   // Skip header if first line has 'nombre'
   const start = lines[0].toLowerCase().includes('nombre') ? 1 : 0;
   bulkUsersParsed = [];
