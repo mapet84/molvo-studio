@@ -568,7 +568,7 @@ const SCOPES    = 'https://www.googleapis.com/auth/spreadsheets https://www.goog
 const DISCOVERY = ['https://sheets.googleapis.com/$discovery/rest?version=v4'];
 
 const PHASE_COLORS = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
-const STATUS_COLORS = {'En progreso':'#3a5f8a','Atrasado':'#b84444','En riesgo':'#c4892a','Completado':'#3d7a5a','Por iniciar':'#8a8680'};
+const STATUS_COLORS = {'En progreso':'#3a5f8a','Brief':'#5a7a4a','Cotizacion':'#8a5a3a','En aprobacion':'#6a3a8a','Pre-Produccion':'#3a5f8a','Produccion':'#2a4f7a','Post-Produccion':'#3a7a7a','Atrasado':'#b84444','En riesgo':'#c4892a','Completado':'#3d7a5a','Por iniciar':'#8a8680'};
 const DEFAULT_PHASES = ['Brief / Pitch de Cliente','Conceptualización / Cotización','Presentación y Aprobación','Pre-Producción','Producción','Post-Producción','Cierre de Proyecto'];
 const ALL_ROLES = ['Ventas','Creativo','Productor Ejecutivo','Asistente de Dirección','Asistente de Producción','Coordinador Post-producción','Editor','Director','Finanzas','Responsable de Proyecto'];
 
@@ -1337,6 +1337,46 @@ function taskRow(t, phColor, pStart) {
   </div>`;
 }
 
+
+const FASE_STATUS_MAP = [
+  { fase: 'Brief / Pitch de Cliente',          status: 'Brief' },
+  { fase: 'Conceptualización / Cotización',     status: 'Cotización' },
+  { fase: 'Presentación y Aprobación',          status: 'En aprobación' },
+  { fase: 'Pre-Producción',                     status: 'Pre-Producción' },
+  { fase: 'Producción',                         status: 'Producción' },
+  { fase: 'Post-Producción',                    status: 'Post-Producción' },
+  { fase: 'Cierre de Proyecto',                 status: 'Completado' },
+];
+
+function calcProjectStatus(proyId) {
+  const tasks = DB.tareas.filter(t => t.proyecto_id === proyId);
+  if (!tasks.length) return 'Brief';
+
+  // Find the furthest phase that has at least one incomplete task
+  // The current status = the phase of the first incomplete task
+  for (const {fase, status} of FASE_STATUS_MAP) {
+    const phaseTasks = tasks.filter(t => t.fase === fase);
+    if (!phaseTasks.length) continue;
+    const allDone = phaseTasks.every(t => t.done === 'true');
+    if (!allDone) return status; // still in this phase
+  }
+  return 'Completado'; // all done
+}
+
+async function updateProjectStatus(proyId) {
+  const proj = DB.proyectos.find(p => p.id === proyId);
+  if (!proj) return;
+  const newStatus = calcProjectStatus(proyId);
+  if (proj.status === newStatus) return; // no change
+  proj.status = newStatus;
+  const rowNum = getRowNum('proyectos', proyId);
+  if (rowNum >= 0) {
+    await sheetsUpdate('proyectos', rowNum, SHEET_HEADERS.proyectos.map(h => proj[h] || ''));
+  }
+  renderOverview();
+  renderProjectSelector();
+}
+
 const FASES_EARLY = ['Brief / Pitch de Cliente','Conceptualización / Cotización','Presentación y Aprobación'];
 const FASES_LATE  = ['Pre-Producción','Producción','Post-Producción','Cierre de Proyecto'];
 const FASE3_LAST  = 'Llenar brief de producción';
@@ -1546,6 +1586,7 @@ async function tryComplete(taskId, phColor) {
   if (task.done === 'true') {
     task.done = 'false';
     await updateTaskDone(task);
+    await updateProjectStatus(task.proyecto_id);
     renderProject();
     if (activeTaskId === taskId) openTask(taskId);
     return;
@@ -1568,6 +1609,8 @@ async function tryComplete(taskId, phColor) {
 
   task.done = 'true';
   await updateTaskDone(task);
+  // Update project status based on phase completion
+  await updateProjectStatus(task.proyecto_id);
   renderProject();
   if (activeTaskId === taskId) openTask(taskId);
 
