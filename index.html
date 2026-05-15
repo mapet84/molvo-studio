@@ -265,7 +265,7 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
   <div class="auth-sub">STUDIO · PROJECT MANAGEMENT</div>
 
   <!-- Molvo login form -->
-  <div style="width:320px;margin-bottom:20px">
+  <div id="login-step1" style="width:320px;margin-bottom:20px">
     <div style="margin-bottom:10px">
       <label style="font-size:10px;letter-spacing:0.1em;color:#666;display:block;margin-bottom:4px">USUARIO</label>
       <input id="login-user" type="text" placeholder="nombre_usuario" autocomplete="username"
@@ -282,6 +282,17 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
       INGRESAR
     </button>
     <div id="auth-status" style="margin-top:12px;font-size:11px;color:#666;text-align:center;min-height:16px"></div>
+  </div>
+
+  <!-- Step 2 shown after credentials verified -->
+  <div id="login-step2" style="display:none;width:320px;text-align:center;margin-bottom:20px">
+    <div style="font-size:12px;color:#c9a96e;margin-bottom:16px;letter-spacing:0.06em">✓ Credenciales verificadas</div>
+    <div style="font-size:11px;color:#666;margin-bottom:16px">Haz clic para conectar con Google y acceder al sistema</div>
+    <button id="btn-google-connect" onclick="connectGoogle()" style="width:100%;padding:13px;background:var(--white);color:#0a0a0a;border:1px solid var(--gold);border-radius:4px;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:0.08em;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Conectar con Google
+    </button>
+    <button onclick="currentMolvoUser=null;document.getElementById('login-step2').style.display='none';document.getElementById('login-step1').style.display='block';" style="margin-top:10px;background:none;border:none;cursor:pointer;font-size:10px;color:#555;font-family:'DM Mono',monospace">← Volver</button>
   </div>
 
   <div style="display:flex;align-items:center;gap:12px;width:320px;margin-bottom:20px">
@@ -699,13 +710,18 @@ async function molvoLogin() {
   if (hash !== user.passwordHash) { statusEl.textContent = 'Contraseña incorrecta'; statusEl.style.color='#a83838'; return; }
   currentMolvoUser = user;
   localStorage.setItem('molvo_session', JSON.stringify({username: user.username, ts: Date.now()}));
-  statusEl.textContent = 'Conectando con Google...'; statusEl.style.color='#c9a96e';
-  // Load Google APIs first, then request OAuth token
+  // Show Google connect button — must be direct user click to avoid popup blocker
+  statusEl.textContent = '';
+  document.getElementById('login-step2').style.display = 'block';
+  document.getElementById('login-step1').style.display = 'none';
+}
+
+async function connectGoogle() {
+  const btn = document.getElementById('btn-google-connect');
+  if (btn) btn.disabled = true;
   await loadGapi();
   await loadGis();
-  // Request token without consent prompt (silent if already granted)
   tokenClient.requestAccessToken({ prompt: '' });
-  // afterMolvoSignIn() will be called by the token callback
 }
 
 async function afterMolvoSignIn() {
