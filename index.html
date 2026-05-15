@@ -364,7 +364,7 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
     <!-- CONFIG TABS -->
     <div style="display:flex;border-bottom:0.5px solid var(--border);margin:-20px -20px 20px;flex-wrap:wrap">
       <button class="nav-tab active" id="ctab-usuarios" onclick="showConfigTab('usuarios')">Usuarios</button>
-      <button class="nav-tab" id="ctab-plantilla" onclick="showConfigTab('plantilla')">Plantilla</button>
+      <button class="nav-tab" id="ctab-catalogo" onclick="showConfigTab('catalogo')">Catálogo de tareas</button>
       <button class="nav-tab" id="ctab-tipos" onclick="showConfigTab('tipos')">Tipos de proyecto</button>
       <button class="nav-tab" id="ctab-horario" onclick="showConfigTab('horario')">Horario laboral</button>
       <button class="nav-tab" id="ctab-sistema" onclick="showConfigTab('sistema')">Sistema</button>
@@ -388,18 +388,22 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
       </div>
     </div>
 
-    <!-- PLANTILLA -->
-    <div id="config-plantilla" style="display:none">
-      <div class="section-card">
-        <div class="section-title">
-          Plantilla maestra de proyecto
-          <div style="display:flex;gap:8px">
-            <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="openAddTemplateTaskModal()">+ Tarea</button>
-            <button class="btn-primary" style="font-size:10px;padding:4px 10px" onclick="saveTemplate()">Guardar plantilla</button>
+    <!-- CATÁLOGO DE TAREAS -->
+    <div id="config-catalogo" style="display:none">
+      <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;min-height:500px">
+        <div style="border:0.5px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="padding:10px 14px;border-bottom:0.5px solid var(--border);background:var(--cream)">
+            <div style="font-family:'Cormorant Garamond',serif;font-size:15px;margin-bottom:8px">Tareas</div>
+            <button class="btn-primary" style="width:100%;font-size:10px;padding:5px" onclick="openNewCatalogTaskModal()">+ Nueva tarea</button>
+          </div>
+          <div style="flex:1;overflow-y:auto" id="catalog-task-list"></div>
+        </div>
+        <div style="border:0.5px solid var(--border);border-radius:10px;overflow:hidden" id="catalog-task-editor">
+          <div style="padding:40px;text-align:center;color:var(--lgray)">
+            <div style="font-size:24px;margin-bottom:8px">◻</div>
+            <div>Selecciona una tarea para editar</div>
           </div>
         </div>
-        <div style="font-size:11px;color:var(--gray);margin-bottom:14px">Define las tareas, roles, duraciones y dependencias que se crean automáticamente en cada nuevo proyecto.</div>
-        <div id="template-table"></div>
       </div>
     </div>
 
@@ -410,7 +414,11 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
         <!-- TYPE SELECTOR SIDEBAR -->
         <div style="border:0.5px solid var(--border);border-radius:10px;overflow:hidden">
           <div style="padding:10px 14px;border-bottom:0.5px solid var(--border);background:var(--cream)">
-            <div style="font-family:'Cormorant Garamond',serif;font-size:15px">Tipos</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:15px;margin-bottom:8px">Tipos</div>
+            <div style="display:flex;gap:5px">
+              <button class="btn-primary" style="font-size:9px;padding:3px 8px;flex:1" onclick="openAddTipoModal()">+ Nuevo</button>
+              <button class="btn-secondary" style="font-size:9px;padding:3px 8px;color:var(--red);border-color:var(--red)" onclick="deleteTipo()">✕</button>
+            </div>
           </div>
           <div id="tipo-sidebar"></div>
         </div>
@@ -477,7 +485,7 @@ const ALL_ROLES = ['Ventas','Creativo','Productor Ejecutivo','Asistente de Direc
 
 // ----------------------------------------
 let tokenClient, accessToken;
-let DB = { proyectos:[], tareas:[], campos_tarea:[], clientes:[], accionables_pago:[], usuarios:[], asignaciones:[] };
+let DB = { proyectos:[], tareas:[], campos_tarea:[], clientes:[], contactos_cliente:[], accionables_pago:[], usuarios:[], asignaciones:[], catalogo_tareas:[], catalogo_campos:[] };
 let activeProjectId = null, activeTaskId = null, activeFieldKey = null;
 let selectedClientId = null;
 
@@ -652,12 +660,15 @@ async function sheetsBatchAppend(sheet, rowsArray) {
 // ----------------------------------------
 const SHEET_HEADERS = {
   proyectos:      ['id','nombre','cliente_id','status','fecha_inicio','fecha_fin','presupuesto','tipo','descripcion','responsable_id','creado_en'],
-  tareas:         ['id','proyecto_id','fase','nombre','rol','usuario_id','start_day','duracion','done','creado_en'],
-  campos_tarea:   ['id','tarea_id','clave','label','tipo','requerido','valor','actualizado_en'],
+  tareas:         ['id','proyecto_id','fase','nombre','rol','usuario_id','start_day','duracion','done','creado_en','catalogo_id'],
+  campos_tarea:   ['id','tarea_id','clave','label','tipo','requerido','valor','actualizado_en','opciones'],
   clientes:       ['id','nombre','rfc','tipo','dias_pago','metodo_pago','contacto_nombre','cargo','email_comercial','email_facturacion','email_aprobacion','telefono','whatsapp','notas','creado_en'],
+  contactos_cliente: ['id','cliente_id','rol_cliente','nombre','telefono','email','whatsapp','medio_preferido'],
   accionables_pago: ['id','cliente_id','label','porcentaje','tarea_ref'],
   usuarios:       ['id','nombre','iniciales','roles','email','telefono','whatsapp','color','activo'],
   asignaciones:   ['id','tarea_id','usuario_id','proyecto_id','fecha_inicio','fecha_fin'],
+  catalogo_tareas: ['id','fase','nombre','rol_molvo','rol_cliente','duracion_dias','descripcion','creado_en'],
+  catalogo_campos: ['id','catalogo_tarea_id','label','tipo','requerido','opciones'],
 };
 
 async function initSheetStructure(silent=false) {
@@ -812,7 +823,7 @@ function fmt(d) { return new Date(d).toLocaleDateString('es-MX',{day:'2-digit',m
 function taskRow(t, phColor, pStart) {
   const u = DB.usuarios.find(u => u.id === t.usuario_id);
   const sd = addD(pStart, parseInt(t.start_day)||0);
-  const ed = addD(pStart, (parseInt(t.start_day)||0) + (parseInt(t.duracion)||1));
+  const ed = addD(pStart, (parseInt(t.start_day)||0) + hoursToDays(parseInt(t.duracion)||8));
   const isActive = activeTaskId === t.id;
   const fields = DB.campos_tarea.filter(c => c.tarea_id === t.id && c.requerido === 'true');
   const filledFields = fields.filter(c => c.valor && c.valor.trim() !== '');
@@ -905,7 +916,7 @@ function openTask(taskId) {
   const u = DB.usuarios.find(u => u.id === task.usuario_id);
   const pStart = new Date(proj?.fecha_inicio || '2025-01-01');
   const sd = addD(pStart, parseInt(task.start_day)||0);
-  const ed = addD(pStart, (parseInt(task.start_day)||0)+(parseInt(task.duracion)||1));
+  const ed = addD(pStart, (parseInt(task.start_day)||0)+hoursToDays(parseInt(task.duracion)||8));
   const phColor = PHASE_COLORS[DEFAULT_PHASES.indexOf(task.fase) % PHASE_COLORS.length] || '#888';
 
   const fields = DB.campos_tarea.filter(c => c.tarea_id === taskId);
@@ -1040,6 +1051,26 @@ function calcBD(start, end) {
   return n;
 }
 
+function hoursPerDay() {
+  // Use workSchedule if available, default 8h
+  if (typeof workSchedule !== 'undefined') {
+    const wdays = Object.values(workSchedule).filter(d=>d.active&&d.start&&d.end);
+    if (wdays.length) {
+      const avg = wdays.reduce((s,d)=>s+calcHours(d.start,d.end),0)/wdays.length;
+      return avg>0?avg:8;
+    }
+  }
+  return 8;
+}
+
+function hoursToDays(hours) {
+  return Math.max(1, Math.ceil(hours / hoursPerDay()));
+}
+
+function daysToHours(days) {
+  return Math.round(days * hoursPerDay());
+}
+
 function getUserLoad(uid, s, e) {
   const start = new Date(s), end = new Date(e);
   const total = calcBD(start, end);
@@ -1050,7 +1081,7 @@ function getUserLoad(uid, s, e) {
     if (!pr) return;
     const ps = new Date(pr.fecha_inicio||'2025-01-01');
     const ts = new Date(ps.getTime()+(parseInt(t.start_day)||0)*864e5);
-    const te = new Date(ts.getTime()+(parseInt(t.duracion)||1)*864e5);
+    const te = new Date(ts.getTime()+hoursToDays(parseInt(t.duracion)||8)*864e5);
     const os = ts>start?ts:start, oe = te<end?te:end;
     if (os<oe) {
       const ov = calcBD(os, oe); used += ov;
@@ -1125,7 +1156,7 @@ function renderResUserList(taskId, proj) {
   if (!task || !proj) return;
   const pStart2 = new Date(proj.fecha_inicio||'2025-01-01');
   const sd = new Date(pStart2.getTime()+(parseInt(task.start_day)||0)*864e5);
-  const ed = new Date(sd.getTime()+(parseInt(task.duracion)||1)*864e5);
+  const ed = new Date(sd.getTime()+hoursToDays(parseInt(task.duracion)||8)*864e5);
   const ss = sd.toISOString().split('T')[0];
   const es = ed.toISOString().split('T')[0];
   const fmtD = d => new Date(d).toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
@@ -1259,39 +1290,39 @@ function openNewProjectModal() {
 }
 
 const STANDARD_TASKS = [
-  {fase:'Brief / Pitch de Cliente',nombre:'Tomar información inicial',rol:'Ventas',start_day:0,duracion:2,campos:[{label:'Nombre del proyecto',tipo:'text',req:true},{label:'Presupuesto estimado',tipo:'text',req:true},{label:'Entregables',tipo:'textarea',req:true},{label:'Fecha de entrega',tipo:'date',req:true}]},
-  {fase:'Brief / Pitch de Cliente',nombre:'Evaluación del proyecto',rol:'Ventas',start_day:2,duracion:1,campos:[{label:'Checklist evaluación',tipo:'textarea',req:true},{label:'Aprobación interna',tipo:'select',req:true}]},
-  {fase:'Brief / Pitch de Cliente',nombre:'Registrar datos en CRM',rol:'Ventas',start_day:3,duracion:1,campos:[{label:'Nombre del cliente',tipo:'text',req:true},{label:'Registrado en CRM',tipo:'select',req:true}]},
-  {fase:'Conceptualización / Cotización',nombre:'Pasar propuesta al creativo',rol:'Ventas',start_day:4,duracion:1,campos:[{label:'Brief de Fase 1',tipo:'textarea',req:true}]},
-  {fase:'Conceptualización / Cotización',nombre:'Propuesta creativa del proyecto',rol:'Creativo',start_day:5,duracion:3,campos:[{label:'Propuesta creativa',tipo:'textarea',req:true},{label:'Referencias visuales',tipo:'text',req:false},{label:'Concepto aprobado',tipo:'select',req:true}]},
-  {fase:'Conceptualización / Cotización',nombre:'Crear cotización formal',rol:'Productor Ejecutivo',start_day:8,duracion:2,campos:[{label:'Costo al cliente',tipo:'text',req:true},{label:'Lista de entregables',tipo:'textarea',req:true},{label:'Equipo asignado',tipo:'text',req:true},{label:'Días de producción',tipo:'text',req:true},{label:'Documento cotización',tipo:'text',req:true}]},
-  {fase:'Conceptualización / Cotización',nombre:'Enviar cotización a cliente',rol:'Ventas',start_day:10,duracion:1,campos:[{label:'Fecha de envío',tipo:'date',req:true},{label:'Canal de envío',tipo:'select',req:false}]},
-  {fase:'Conceptualización / Cotización',nombre:'Aprobación de cliente',rol:'Ventas',start_day:11,duracion:2,campos:[{label:'Pre-contrato digital',tipo:'select',req:true},{label:'Entregables y pagos',tipo:'textarea',req:true},{label:'Fechas de pago',tipo:'text',req:true}]},
-  {fase:'Presentación y Aprobación',nombre:'Presentar propuesta final',rol:'Director',start_day:13,duracion:2,campos:[{label:'Modificaciones registradas',tipo:'textarea',req:true},{label:'Confirmación de fechas',tipo:'date',req:true}]},
-  {fase:'Presentación y Aprobación',nombre:'Reenviar con ajustes',rol:'Director',start_day:15,duracion:1,campos:[{label:'Aprobación formal',tipo:'select',req:true}]},
-  {fase:'Presentación y Aprobación',nombre:'Firmar contrato',rol:'Director',start_day:16,duracion:1,campos:[{label:'Contrato firmado',tipo:'select',req:true},{label:'Fecha de firma',tipo:'date',req:true}]},
-  {fase:'Presentación y Aprobación',nombre:'Llenar brief de producción',rol:'Responsable de Proyecto',start_day:17,duracion:1,campos:[{label:'Talento asignado',tipo:'text',req:true},{label:'Fecha de video',tipo:'date',req:true},{label:'Datos de producción',tipo:'textarea',req:true}]},
-  {fase:'Pre-Producción',nombre:'Agendar personal y locación',rol:'Productor Ejecutivo',start_day:18,duracion:3,campos:[{label:'Videógrafo asignado',tipo:'text',req:true},{label:'Fotógrafo asignado',tipo:'text',req:true},{label:'Locación confirmada',tipo:'text',req:true},{label:'Disponibilidad verificada',tipo:'select',req:true}]},
-  {fase:'Pre-Producción',nombre:'Hacer escaletas',rol:'Editor / Director',start_day:18,duracion:4,campos:[{label:'Documento de escaleta',tipo:'text',req:true},{label:'Detalle toma por toma',tipo:'textarea',req:true}]},
-  {fase:'Pre-Producción',nombre:'Hacer y enviar hoja de llamado',rol:'Asistente de Dirección',start_day:21,duracion:1,campos:[{label:'Enviado por WhatsApp',tipo:'select',req:true},{label:'Documento formal de llamado',tipo:'text',req:true}]},
-  {fase:'Pre-Producción',nombre:'Hacer y enviar plan de trabajo',rol:'Asistente de Dirección',start_day:21,duracion:1,campos:[{label:'Enviado por WhatsApp',tipo:'select',req:true},{label:'Documento plan de trabajo',tipo:'text',req:true}]},
-  {fase:'Pre-Producción',nombre:'Agendar en Google Calendar',rol:'Responsable de Proyecto',start_day:22,duracion:1,campos:[{label:'Evento en Google Calendar',tipo:'select',req:true},{label:'Carpetas en Dropbox creadas',tipo:'select',req:true}]},
-  {fase:'Producción',nombre:'Recoger equipo necesario',rol:'Asistente de Producción',start_day:23,duracion:1,campos:[{label:'Lista de equipo verificada',tipo:'select',req:true},{label:'Equipo recogido',tipo:'select',req:true}]},
-  {fase:'Producción',nombre:'Tomar notas de cambios',rol:'Asistente de Producción',start_day:23,duracion:1,campos:[{label:'Notas de cambios del día',tipo:'textarea',req:true},{label:'Modificaciones para editor',tipo:'textarea',req:true}]},
-  {fase:'Producción',nombre:'Devolver equipo',rol:'Asistente de Producción',start_day:24,duracion:1,campos:[{label:'Equipo devuelto',tipo:'select',req:true},{label:'Validado contra lista',tipo:'select',req:true}]},
-  {fase:'Producción',nombre:'Respaldar el material',rol:'Asistente de Producción',start_day:24,duracion:1,campos:[{label:'Guardado en disco duro',tipo:'select',req:true},{label:'Subido a Dropbox',tipo:'select',req:true},{label:'Locación del archivo',tipo:'text',req:true}]},
-  {fase:'Post-Producción',nombre:'Asignar editor',rol:'Coordinador Post-producción',start_day:25,duracion:1,campos:[{label:'Editor asignado',tipo:'text',req:true},{label:'Disponibilidad confirmada',tipo:'select',req:true}]},
-  {fase:'Post-Producción',nombre:'Realizar 1er corte de edición',rol:'Editor',start_day:26,duracion:5,campos:[{label:'Primera versión entregada',tipo:'select',req:true},{label:'Link al material',tipo:'text',req:true}]},
-  {fase:'Post-Producción',nombre:'Revisión interna (iterativa)',rol:'Coordinador Post-producción',start_day:31,duracion:3,campos:[{label:'Comentarios internos',tipo:'textarea',req:true},{label:'Número de versión',tipo:'text',req:true},{label:'Aprobado internamente',tipo:'select',req:true}]},
-  {fase:'Post-Producción',nombre:'Enviar versión aprobada a cliente',rol:'Coordinador Post-producción',start_day:34,duracion:1,campos:[{label:'Material enviado',tipo:'select',req:true},{label:'Fecha de envío',tipo:'date',req:true}]},
-  {fase:'Post-Producción',nombre:'Revisión cliente (iterativa)',rol:'Coordinador Post-producción',start_day:35,duracion:3,campos:[{label:'Comentarios del cliente',tipo:'textarea',req:true},{label:'Versión revisada por cliente',tipo:'text',req:true}]},
-  {fase:'Post-Producción',nombre:'Aprobación final del cliente',rol:'Cliente',start_day:38,duracion:1,campos:[{label:'VoBo por correo',tipo:'select',req:true},{label:'Fecha de aprobación',tipo:'date',req:true}]},
-  {fase:'Post-Producción',nombre:'Enviar factura',rol:'Finanzas',start_day:39,duracion:1,campos:[{label:'Factura enviada',tipo:'select',req:true},{label:'CFDI enviado',tipo:'select',req:true},{label:'Monto de factura',tipo:'text',req:true}]},
-  {fase:'Cierre de Proyecto',nombre:'Reunión de retroalimentación',rol:'Responsable de Proyecto',start_day:40,duracion:1,campos:[{label:'Minuta de cierre',tipo:'textarea',req:true},{label:'Asistentes',tipo:'textarea',req:true}]},
-  {fase:'Cierre de Proyecto',nombre:'Agendar evaluación de proyecto',rol:'Responsable de Proyecto',start_day:40,duracion:1,campos:[{label:'Formato de evaluación creado',tipo:'select',req:true},{label:'Fecha programada',tipo:'date',req:true}]},
-  {fase:'Cierre de Proyecto',nombre:'Realizar evaluación',rol:'Director',start_day:60,duracion:1,campos:[{label:'Formulario completado',tipo:'select',req:true},{label:'Resultado de evaluación',tipo:'textarea',req:true}]},
-  {fase:'Cierre de Proyecto',nombre:'Cobranza',rol:'Finanzas',start_day:39,duracion:14,campos:[{label:'Corte de mes realizado',tipo:'select',req:true},{label:'Monto pendiente de cobro',tipo:'text',req:true}]},
-  {fase:'Cierre de Proyecto',nombre:'Cierre de mes',rol:'Finanzas',start_day:55,duracion:5,campos:[{label:'Evaluación cuentas por cobrar',tipo:'textarea',req:true},{label:'Evaluación de utilidad',tipo:'textarea',req:true}]},
+  {fase:'Brief / Pitch de Cliente',nombre:'Tomar información inicial',rol:'Ventas',start_day:0,duracion:16,campos:[{label:'Nombre del proyecto',tipo:'text',req:true},{label:'Presupuesto estimado',tipo:'text',req:true},{label:'Entregables',tipo:'textarea',req:true},{label:'Fecha de entrega',tipo:'date',req:true}]},
+  {fase:'Brief / Pitch de Cliente',nombre:'Evaluación del proyecto',rol:'Ventas',start_day:2,duracion:8,campos:[{label:'Checklist evaluación',tipo:'textarea',req:true},{label:'Aprobación interna',tipo:'select',req:true}]},
+  {fase:'Brief / Pitch de Cliente',nombre:'Registrar datos en CRM',rol:'Ventas',start_day:3,duracion:8,campos:[{label:'Nombre del cliente',tipo:'text',req:true},{label:'Registrado en CRM',tipo:'select',req:true}]},
+  {fase:'Conceptualización / Cotización',nombre:'Pasar propuesta al creativo',rol:'Ventas',start_day:4,duracion:8,campos:[{label:'Brief de Fase 1',tipo:'textarea',req:true}]},
+  {fase:'Conceptualización / Cotización',nombre:'Propuesta creativa del proyecto',rol:'Creativo',start_day:5,duracion:24,campos:[{label:'Propuesta creativa',tipo:'textarea',req:true},{label:'Referencias visuales',tipo:'text',req:false},{label:'Concepto aprobado',tipo:'select',req:true}]},
+  {fase:'Conceptualización / Cotización',nombre:'Crear cotización formal',rol:'Productor Ejecutivo',start_day:8,duracion:16,campos:[{label:'Costo al cliente',tipo:'text',req:true},{label:'Lista de entregables',tipo:'textarea',req:true},{label:'Equipo asignado',tipo:'text',req:true},{label:'Días de producción',tipo:'text',req:true},{label:'Documento cotización',tipo:'text',req:true}]},
+  {fase:'Conceptualización / Cotización',nombre:'Enviar cotización a cliente',rol:'Ventas',start_day:10,duracion:8,campos:[{label:'Fecha de envío',tipo:'date',req:true},{label:'Canal de envío',tipo:'select',req:false}]},
+  {fase:'Conceptualización / Cotización',nombre:'Aprobación de cliente',rol:'Ventas',start_day:11,duracion:16,campos:[{label:'Pre-contrato digital',tipo:'select',req:true},{label:'Entregables y pagos',tipo:'textarea',req:true},{label:'Fechas de pago',tipo:'text',req:true}]},
+  {fase:'Presentación y Aprobación',nombre:'Presentar propuesta final',rol:'Director',start_day:13,duracion:16,campos:[{label:'Modificaciones registradas',tipo:'textarea',req:true},{label:'Confirmación de fechas',tipo:'date',req:true}]},
+  {fase:'Presentación y Aprobación',nombre:'Reenviar con ajustes',rol:'Director',start_day:15,duracion:8,campos:[{label:'Aprobación formal',tipo:'select',req:true}]},
+  {fase:'Presentación y Aprobación',nombre:'Firmar contrato',rol:'Director',start_day:16,duracion:8,campos:[{label:'Contrato firmado',tipo:'select',req:true},{label:'Fecha de firma',tipo:'date',req:true}]},
+  {fase:'Presentación y Aprobación',nombre:'Llenar brief de producción',rol:'Responsable de Proyecto',start_day:17,duracion:8,campos:[{label:'Talento asignado',tipo:'text',req:true},{label:'Fecha de video',tipo:'date',req:true},{label:'Datos de producción',tipo:'textarea',req:true}]},
+  {fase:'Pre-Producción',nombre:'Agendar personal y locación',rol:'Productor Ejecutivo',start_day:18,duracion:24,campos:[{label:'Videógrafo asignado',tipo:'text',req:true},{label:'Fotógrafo asignado',tipo:'text',req:true},{label:'Locación confirmada',tipo:'text',req:true},{label:'Disponibilidad verificada',tipo:'select',req:true}]},
+  {fase:'Pre-Producción',nombre:'Hacer escaletas',rol:'Editor / Director',start_day:18,duracion:32,campos:[{label:'Documento de escaleta',tipo:'text',req:true},{label:'Detalle toma por toma',tipo:'textarea',req:true}]},
+  {fase:'Pre-Producción',nombre:'Hacer y enviar hoja de llamado',rol:'Asistente de Dirección',start_day:21,duracion:8,campos:[{label:'Enviado por WhatsApp',tipo:'select',req:true},{label:'Documento formal de llamado',tipo:'text',req:true}]},
+  {fase:'Pre-Producción',nombre:'Hacer y enviar plan de trabajo',rol:'Asistente de Dirección',start_day:21,duracion:8,campos:[{label:'Enviado por WhatsApp',tipo:'select',req:true},{label:'Documento plan de trabajo',tipo:'text',req:true}]},
+  {fase:'Pre-Producción',nombre:'Agendar en Google Calendar',rol:'Responsable de Proyecto',start_day:22,duracion:8,campos:[{label:'Evento en Google Calendar',tipo:'select',req:true},{label:'Carpetas en Dropbox creadas',tipo:'select',req:true}]},
+  {fase:'Producción',nombre:'Recoger equipo necesario',rol:'Asistente de Producción',start_day:23,duracion:8,campos:[{label:'Lista de equipo verificada',tipo:'select',req:true},{label:'Equipo recogido',tipo:'select',req:true}]},
+  {fase:'Producción',nombre:'Tomar notas de cambios',rol:'Asistente de Producción',start_day:23,duracion:8,campos:[{label:'Notas de cambios del día',tipo:'textarea',req:true},{label:'Modificaciones para editor',tipo:'textarea',req:true}]},
+  {fase:'Producción',nombre:'Devolver equipo',rol:'Asistente de Producción',start_day:24,duracion:8,campos:[{label:'Equipo devuelto',tipo:'select',req:true},{label:'Validado contra lista',tipo:'select',req:true}]},
+  {fase:'Producción',nombre:'Respaldar el material',rol:'Asistente de Producción',start_day:24,duracion:8,campos:[{label:'Guardado en disco duro',tipo:'select',req:true},{label:'Subido a Dropbox',tipo:'select',req:true},{label:'Locación del archivo',tipo:'text',req:true}]},
+  {fase:'Post-Producción',nombre:'Asignar editor',rol:'Coordinador Post-producción',start_day:25,duracion:8,campos:[{label:'Editor asignado',tipo:'text',req:true},{label:'Disponibilidad confirmada',tipo:'select',req:true}]},
+  {fase:'Post-Producción',nombre:'Realizar 1er corte de edición',rol:'Editor',start_day:26,duracion:40,campos:[{label:'Primera versión entregada',tipo:'select',req:true},{label:'Link al material',tipo:'text',req:true}]},
+  {fase:'Post-Producción',nombre:'Revisión interna (iterativa)',rol:'Coordinador Post-producción',start_day:31,duracion:24,campos:[{label:'Comentarios internos',tipo:'textarea',req:true},{label:'Número de versión',tipo:'text',req:true},{label:'Aprobado internamente',tipo:'select',req:true}]},
+  {fase:'Post-Producción',nombre:'Enviar versión aprobada a cliente',rol:'Coordinador Post-producción',start_day:34,duracion:8,campos:[{label:'Material enviado',tipo:'select',req:true},{label:'Fecha de envío',tipo:'date',req:true}]},
+  {fase:'Post-Producción',nombre:'Revisión cliente (iterativa)',rol:'Coordinador Post-producción',start_day:35,duracion:24,campos:[{label:'Comentarios del cliente',tipo:'textarea',req:true},{label:'Versión revisada por cliente',tipo:'text',req:true}]},
+  {fase:'Post-Producción',nombre:'Aprobación final del cliente',rol:'Cliente',start_day:38,duracion:8,campos:[{label:'VoBo por correo',tipo:'select',req:true},{label:'Fecha de aprobación',tipo:'date',req:true}]},
+  {fase:'Post-Producción',nombre:'Enviar factura',rol:'Finanzas',start_day:39,duracion:8,campos:[{label:'Factura enviada',tipo:'select',req:true},{label:'CFDI enviado',tipo:'select',req:true},{label:'Monto de factura',tipo:'text',req:true}]},
+  {fase:'Cierre de Proyecto',nombre:'Reunión de retroalimentación',rol:'Responsable de Proyecto',start_day:40,duracion:8,campos:[{label:'Minuta de cierre',tipo:'textarea',req:true},{label:'Asistentes',tipo:'textarea',req:true}]},
+  {fase:'Cierre de Proyecto',nombre:'Agendar evaluación de proyecto',rol:'Responsable de Proyecto',start_day:40,duracion:8,campos:[{label:'Formato de evaluación creado',tipo:'select',req:true},{label:'Fecha programada',tipo:'date',req:true}]},
+  {fase:'Cierre de Proyecto',nombre:'Realizar evaluación',rol:'Director',start_day:60,duracion:8,campos:[{label:'Formulario completado',tipo:'select',req:true},{label:'Resultado de evaluación',tipo:'textarea',req:true}]},
+  {fase:'Cierre de Proyecto',nombre:'Cobranza',rol:'Finanzas',start_day:39,duracion:112,campos:[{label:'Corte de mes realizado',tipo:'select',req:true},{label:'Monto pendiente de cobro',tipo:'text',req:true}]},
+  {fase:'Cierre de Proyecto',nombre:'Cierre de mes',rol:'Finanzas',start_day:55,duracion:40,campos:[{label:'Evaluación cuentas por cobrar',tipo:'textarea',req:true},{label:'Evaluación de utilidad',tipo:'textarea',req:true}]},
 ];
 
 async function createProject() {
@@ -1364,7 +1395,7 @@ function openAddTaskModal(phase, phColor) {
         <select class="fselect" id="at-user"><option value="">— Sin asignar —</option>${users.map(u=>`<option value="${u.id}">${u.nombre}</option>`).join('')}</select>
       </div>
       <div class="form-group"><label class="flabel">Inicio (días desde inicio proy.)</label><input type="number" class="finput" id="at-start" value="0" min="0"></div>
-      <div class="form-group"><label class="flabel">Duración (días)</label><input type="number" class="finput" id="at-dur" value="3" min="1"></div>
+      <div class="form-group"><label class="flabel">Duración (horas)</label><input type="number" class="finput" id="at-dur" value="8" min="1" max="999"></div>
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -1459,7 +1490,9 @@ function selectClient(id) {
   const c = DB.clientes.find(c => c.id === id);
   if (!c) return;
   const accionables = DB.accionables_pago.filter(a => a.cliente_id === id);
+  const contactos = DB.contactos_cliente.filter(ct => ct.cliente_id === id);
   const projs = DB.proyectos.filter(p => p.cliente_id === id);
+  const ROL_ICONS = {'Contacto General':'👤','Contacto Comercial':'💼','Contacto de Finanzas':'💰','Contacto de Arte':'🎨'};
   document.getElementById('crm-main').innerHTML = `
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;padding-bottom:14px;border-bottom:0.5px solid var(--border)">
       <div>
@@ -1474,16 +1507,27 @@ function selectClient(id) {
     </div>
     <div class="detail-grid">
       <div class="detail-section-card">
-        <div class="detail-section-name">Contacto</div>
-        <div class="detail-row"><span class="detail-key">Nombre</span><span class="detail-val">${c.contacto_nombre}</span></div>
-        <div class="detail-row"><span class="detail-key">Cargo</span><span class="detail-val">${c.cargo}</span></div>
-        <div style="margin-top:8px">
-          ${c.email_comercial?`<div class="contact-chip">✉ ${c.email_comercial} <span style="font-size:9px;color:var(--gray)">comercial</span></div>`:''}
-          ${c.email_facturacion?`<div class="contact-chip">✉ ${c.email_facturacion} <span style="font-size:9px;color:var(--gray)">fact.</span></div>`:''}
-          ${c.email_aprobacion?`<div class="contact-chip">✉ ${c.email_aprobacion} <span style="font-size:9px;color:var(--gray)">aprob.</span></div>`:''}
-          ${c.telefono?`<div class="contact-chip">☎ ${c.telefono}</div>`:''}
-          ${c.whatsapp?`<div class="contact-chip">WA ${c.whatsapp}</div>`:''}
+        <div class="detail-section-name" style="display:flex;justify-content:space-between;align-items:center">
+          Contactos del cliente
+          <button onclick="openAddContactoModal('${id}')" style="font-size:9px;padding:2px 8px;border:0.5px solid var(--border);border-radius:4px;background:none;cursor:pointer;font-family:'DM Mono',monospace">+ Agregar</button>
         </div>
+        ${contactos.length ? contactos.map(ct => {
+          const isPreferido = ct.medio_preferido==='true';
+          const icon = ROL_ICONS[ct.rol_cliente]||'👤';
+          return `<div style="padding:8px 0;border-bottom:0.5px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <span style="font-size:12px">${icon}</span>
+              <span style="font-size:11px;font-weight:400">${ct.nombre||'—'}</span>
+              <span style="font-size:9px;padding:1px 5px;border-radius:2px;background:var(--cream);color:var(--gray)">${ct.rol_cliente}</span>
+              ${isPreferido?'<span style="font-size:9px;padding:1px 5px;border-radius:2px;background:#c9a96e22;color:#c9a96e">★ Preferido</span>':''}
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;padding-left:18px">
+              ${ct.email?`<span class="contact-chip">✉ ${ct.email}</span>`:''}
+              ${ct.telefono?`<span class="contact-chip">☎ ${ct.telefono}</span>`:''}
+              ${ct.whatsapp?`<span class="contact-chip">WA ${ct.whatsapp}</span>`:''}
+            </div>
+          </div>`;
+        }).join('') : '<div style="font-size:11px;color:var(--lgray);padding:8px 0">Sin contactos registrados. Usa + Agregar.</div>'}
       </div>
       <div class="detail-section-card">
         <div class="detail-section-name">Accionables de pago</div>
@@ -1604,13 +1648,14 @@ function getDefaultTipoTasks() {
 }
 
 function showConfigTab(tab) {
-  ['usuarios','plantilla','tipos','horario','sistema'].forEach(t => {
+  ['usuarios','catalogo','tipos','horario','sistema'].forEach(t => {
     const el = document.getElementById('config-'+t);
     if (el) el.style.display = t===tab?'block':'none';
     const btn = document.getElementById('ctab-'+t);
     if (btn) btn.classList.toggle('active', t===tab);
   });
   if (tab==='plantilla') renderTemplateTable();
+  if (tab==='catalogo') renderCatalogList();
   if (tab==='tipos') renderTiposConfig();
   if (tab==='horario') renderHorarioTable();
 }
@@ -1719,8 +1764,8 @@ function renderTiposConfig() {
   </div>`;
 
   // Column headers
-  html += `<div style="display:grid;grid-template-columns:minmax(0,2fr) 95px 95px 95px 55px 70px minmax(0,1fr) 26px;gap:0;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);padding:6px 14px;border-bottom:0.5px solid var(--border);background:var(--cream);position:sticky;top:0">
-    <span>Tarea</span><span>Rol 1</span><span>Rol 2</span><span>Rol 3</span><span>Horas</span><span>Inicio</span><span>Depende de</span><span></span>
+  html += `<div style="display:grid;grid-template-columns:minmax(0,2fr) 140px 55px 70px minmax(0,1fr) 26px;gap:0;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);padding:6px 14px;border-bottom:0.5px solid var(--border);background:var(--cream);position:sticky;top:0">
+    <span>Tarea</span><span>Roles (1, 2, 3)</span><span>Horas</span><span>Inicio</span><span>Depende de</span><span></span>
   </div>`;
 
   phases.forEach((fase, phIdx) => {
@@ -1737,13 +1782,19 @@ function renderTiposConfig() {
     </div>`;
 
     phaseTasks.forEach(t => {
-      html += `<div style="display:grid;grid-template-columns:minmax(0,2fr) 95px 95px 95px 55px 70px minmax(0,1fr) 26px;gap:0;align-items:center;padding:5px 14px;border-bottom:0.5px solid var(--border);font-size:11px;transition:background 0.1s" onmouseover="this.style.background='var(--sand)'" onmouseout="this.style.background='transparent'">
-        <input value="${t.nombre||''}" onchange="updateTipoTask('${t._id}','nombre',this.value)" style="width:100%;padding:3px 5px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;background:transparent;color:var(--black)" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--white)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'">
-        ${[0,1,2].map(ri => `<select onchange="updateTipoTaskRole('${t._id}',${ri},this.value)" style="width:100%;padding:2px 3px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:9px;background:transparent" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'"><option value="">—</option>${ALL_ROLES.map(r=>`<option${(t.roles&&t.roles[ri]===r)?' selected':''}>${r}</option>`).join('')}</select>`).join('')}
-        <input type="number" min="1" max="999" value="${t.horas||8}" onchange="updateTipoTask('${t._id}','horas',parseInt(this.value)||8)" style="width:100%;padding:3px 4px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;text-align:center;background:transparent" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'">
-        <input type="number" min="0" max="999" value="${t.start_day||0}" onchange="updateTipoTask('${t._id}','start_day',parseInt(this.value)||0)" style="width:100%;padding:3px 4px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;text-align:center;background:transparent" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'">
-        <select onchange="updateTipoTask('${t._id}','dependencias',this.value)" style="width:100%;padding:2px 3px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:9px;background:transparent" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'"><option value="">— Ninguna —</option>${allTaskNames.filter(n=>n!==t.nombre).map(n=>`<option${t.dependencias===n?' selected':''}>${n}</option>`).join('')}</select>
-        <button onclick="deleteTipoTask('${t._id}')" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:13px;padding:2px" title="Eliminar tarea">✕</button>
+      // auto dependency = previous task name
+      const taskIdx = tasks.indexOf(t);
+      const prevTaskName = taskIdx>0 ? tasks[taskIdx-1].nombre : '';
+      const depVal = t.dependencias||prevTaskName;
+      html += `<div style="display:grid;grid-template-columns:minmax(0,2fr) 140px 55px 70px minmax(0,1fr) 26px;gap:0;align-items:start;padding:5px 14px;border-bottom:0.5px solid var(--border);font-size:11px;transition:background 0.1s" onmouseover="this.style.background='var(--sand)'" onmouseout="this.style.background='transparent'">
+        <input value="${t.nombre||''}" onchange="updateTipoTask('${t._id}','nombre',this.value)" style="width:100%;padding:4px 5px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;background:transparent;color:var(--black);margin-top:2px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--white)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          ${[0,1,2].map(ri => `<select onchange="updateTipoTaskRole('${t._id}',${ri},this.value)" style="width:100%;padding:2px 3px;border:0.5px solid var(--border);border-radius:3px;font-family:'DM Mono',monospace;font-size:9px;background:var(--white);color:var(--black)"><option value="">— Rol ${ri+1} —</option>${ALL_ROLES.map(r=>`<option${(t.roles&&t.roles[ri]===r)?' selected':''}>${r}</option>`).join('')}</select>`).join('')}
+        </div>
+        <input type="number" min="1" max="999" value="${t.horas||8}" onchange="updateTipoTask('${t._id}','horas',parseInt(this.value)||8)" style="width:100%;padding:3px 4px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;text-align:center;background:transparent;margin-top:2px" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'">
+        <input type="number" min="0" max="999" value="${t.start_day||0}" onchange="updateTipoTask('${t._id}','start_day',parseInt(this.value)||0)" style="width:100%;padding:3px 4px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;text-align:center;background:transparent;margin-top:2px" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'">
+        <select onchange="updateTipoTask('${t._id}','dependencias',this.value)" style="width:100%;padding:2px 3px;border:0.5px solid var(--border);border-radius:3px;font-family:'DM Mono',monospace;font-size:9px;background:var(--white);color:var(--black);margin-top:2px"><option value="">— Ninguna —</option>${allTaskNames.filter(n=>n!==t.nombre).map(n=>`<option${depVal===n?' selected':''}>${n}</option>`).join('')}</select>
+        <button onclick="deleteTipoTask('${t._id}')" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:13px;padding:2px;margin-top:4px" title="Eliminar tarea">✕</button>
       </div>`;
     });
     // Add task row within phase
@@ -1786,7 +1837,8 @@ function addTipoTask() {
   const id = activeTipoTab+'_'+Date.now();
   const tasks = tipoTasks[activeTipoTab]||[];
   const lastFase = tasks.length ? tasks[tasks.length-1].fase : 'Brief / Pitch de Cliente';
-  tasks.push({_id:id, fase:lastFase, nombre:'Nueva tarea', roles:['Ventas','',''], horas:8, start_day:0, dependencias:'', campos:[]});
+  const prevName = tasks.length ? tasks[tasks.length-1].nombre : '';
+  tasks.push({_id:id, fase:lastFase, nombre:'Nueva tarea', roles:['','',''], horas:8, start_day:0, dependencias:prevName, campos:[]});
   tipoTasks[activeTipoTab] = tasks;
   renderTiposConfig();
 }
@@ -1795,9 +1847,9 @@ function addTipoTaskToFase(fase) {
   if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
   const id = activeTipoTab+'_'+Date.now();
   const tasks = tipoTasks[activeTipoTab]||[];
-  // Insert right after last task of this fase
   const lastIdx = tasks.reduce((last,t,i)=>t.fase===fase?i:last, -1);
-  const newTask = {_id:id, fase, nombre:'Nueva tarea', roles:['','',''], horas:8, start_day:0, dependencias:'', campos:[]};
+  const prevName = lastIdx>=0 ? tasks[lastIdx].nombre : '';
+  const newTask = {_id:id, fase, nombre:'Nueva tarea', roles:['','',''], horas:8, start_day:0, dependencias:prevName, campos:[]};
   if (lastIdx>=0) tasks.splice(lastIdx+1,0,newTask); else tasks.push(newTask);
   tipoTasks[activeTipoTab] = tasks;
   renderTiposConfig();
@@ -1824,10 +1876,64 @@ function deleteTipoFase(fase) {
 function loadDefaultsForTipo() {
   if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
   tipoTasks[activeTipoTab] = getDefaultTipoTasks()[activeTipoTab] || STANDARD_TASKS.map((t,i)=>({
-    ...t, _id:activeTipoTab+'_'+i, dependencias:'', roles:[t.rol,'',''], horas:(t.duracion||1)*8
+    ...t, _id:activeTipoTab+'_'+i, dependencias:i>0?STANDARD_TASKS[i-1].nombre:'', roles:[t.rol,'',''], horas:(t.duracion||8)
   }));
   renderTiposConfig();
   showToast('Plantilla estándar cargada ✓','success');
+}
+
+function openAddTipoModal() {
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const existingTypes = Object.keys(tipoTasks).concat(PROJECT_TYPES);
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Nuevo tipo de proyecto</div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="flabel">Nombre del tipo</label>
+      <input class="finput" id="new-tipo-name" placeholder="Ej: Documental, Spot Publicitario...">
+    </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="flabel">Copiar tareas y responsables de</label>
+      <select class="fselect" id="new-tipo-base">
+        <option value="">— Empezar vacío —</option>
+        ${[...new Set(existingTypes)].map(t=>`<option value="${t}">${t}</option>`).join('')}
+      </select>
+      <div style="font-size:10px;color:var(--gray);margin-top:4px">Se copiarán todas las tareas, roles, horas y dependencias del tipo seleccionado.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="createNewTipo()">Crear tipo</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function createNewTipo() {
+  const name = document.getElementById('new-tipo-name').value.trim();
+  if (!name) { showToast('Escribe un nombre', 'error'); return; }
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const base = document.getElementById('new-tipo-base').value;
+  if (base && tipoTasks[base]) {
+    // Deep copy tasks from base type with new IDs
+    tipoTasks[name] = tipoTasks[base].map((t,i)=>({...t, _id:name+'_'+Date.now()+'_'+i}));
+  } else {
+    tipoTasks[name] = [];
+  }
+  if (!PROJECT_TYPES.includes(name)) PROJECT_TYPES.push(name);
+  activeTipoTab = name;
+  closeModal();
+  saveTipos();
+  renderTiposConfig();
+  showToast('Tipo "'+name+'" creado ✓', 'success');
+}
+
+function deleteTipo() {
+  if (!confirm('¿Eliminar el tipo "'+activeTipoTab+'"? Esta acción no se puede deshacer.')) return;
+  const idx = PROJECT_TYPES.indexOf(activeTipoTab);
+  if (idx>=0) PROJECT_TYPES.splice(idx,1);
+  if (tipoTasks) delete tipoTasks[activeTipoTab];
+  activeTipoTab = PROJECT_TYPES[0]||'';
+  saveTipos();
+  renderTiposConfig();
+  showToast('Tipo eliminado ✓', 'success');
 }
 
 function saveTipos() {
@@ -1892,7 +1998,7 @@ function renderTemplateTable() {
     html += `<div style="margin-bottom:14px">
       <div style="font-family:'Cormorant Garamond',serif;font-size:14px;color:${phColor};margin-bottom:6px;padding:4px 0;border-bottom:0.5px solid var(--border)">${pi+1}. ${fase}</div>
       <div style="display:grid;grid-template-columns:minmax(0,2fr) 120px 60px 80px 120px 32px;gap:0;font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray);padding:4px 8px;border-bottom:0.5px solid var(--border)">
-        <span>Tarea</span><span>Rol</span><span>Días</span><span>Inicio</span><span>Depende de</span><span></span>
+        <span>Tarea</span><span>Rol</span><span>Horas</span><span>Inicio día</span><span>Depende de</span><span></span>
       </div>`;
     phaseTasks.forEach(t => {
       const allNames = tasks.map(tt => tt.nombre).filter(n => n !== t.nombre);
@@ -1938,7 +2044,7 @@ function openAddTemplateTaskModal() {
       <div class="form-group"><label class="flabel">Rol responsable</label>
         <select class="fselect" id="tpl-rol">${ALL_ROLES.map(r=>`<option>${r}</option>`).join('')}</select>
       </div>
-      <div class="form-group"><label class="flabel">Duración (días)</label><input type="number" class="finput" id="tpl-dur" value="3" min="1"></div>
+      <div class="form-group"><label class="flabel">Duración (horas)</label><input type="number" class="finput" id="tpl-dur" value="8" min="1" max="999"></div>
       <div class="form-group"><label class="flabel">Día de inicio (desde inicio proyecto)</label><input type="number" class="finput" id="tpl-start" value="0" min="0"></div>
       <div class="form-group full"><label class="flabel">Dependencia (tarea predecesora)</label>
         <select class="fselect" id="tpl-dep">
@@ -2303,6 +2409,326 @@ async function importBulkUsers() {
   }
   renderConfig();
   showToast(`${count} usuarios importados ✓`, 'success');
+}
+
+// ─── CATÁLOGO DE TAREAS ──────────────────────────────────────────────────────
+const ROLES_CLIENTE = ['Contacto General','Contacto Comercial','Contacto de Finanzas','Contacto de Arte'];
+const MEDIOS_CONTACTO = ['Email','WhatsApp','Teléfono'];
+let activeCatalogId = null;
+
+// Pre-load all standard tasks into catalog format
+const CATALOG_SEED = (function() {
+  const DEFAULT_PHASES = ['Brief / Pitch de Cliente','Conceptualización / Cotización','Presentación y Aprobación','Pre-Producción','Producción','Post-Producción','Cierre de Proyecto'];
+  const FIELDS = {
+    'Tomar información inicial': [{label:'Nombre del proyecto',tipo:'texto_largo',req:true},{label:'Presupuesto estimado',tipo:'texto_corto',req:true},{label:'Entregables',tipo:'texto_largo',req:true},{label:'Fecha de entrega',tipo:'texto_corto',req:true}],
+    'Evaluación del proyecto': [{label:'Checklist evaluación',tipo:'texto_largo',req:true},{label:'Aprobación interna',tipo:'opcion_multiple',req:true,opciones:['Pendiente','En revisión','Aprobado','Rechazado']}],
+    'Registrar datos en CRM': [{label:'Nombre del cliente',tipo:'texto_corto',req:true},{label:'Registrado en CRM',tipo:'opcion_multiple',req:true,opciones:['No','Sí']}],
+    'Pasar propuesta al creativo': [{label:'Brief de Fase 1',tipo:'texto_largo',req:true}],
+    'Propuesta creativa del proyecto': [{label:'Propuesta creativa',tipo:'texto_largo',req:true},{label:'Referencias visuales',tipo:'adjunto',req:false},{label:'Concepto aprobado',tipo:'opcion_multiple',req:true,opciones:['Pendiente','Aprobado','Rechazado']}],
+    'Crear cotización formal': [{label:'Costo al cliente',tipo:'texto_corto',req:true},{label:'Lista de entregables',tipo:'texto_largo',req:true},{label:'Equipo asignado',tipo:'texto_corto',req:true},{label:'Días de producción',tipo:'texto_corto',req:true},{label:'Documento cotización',tipo:'adjunto',req:true}],
+    'Enviar cotización a cliente': [{label:'Fecha de envío',tipo:'texto_corto',req:true},{label:'Canal de envío',tipo:'opcion_multiple',req:false,opciones:['Email','WhatsApp','Presencial']}],
+    'Aprobación de cliente': [{label:'Pre-contrato digital',tipo:'opcion_multiple',req:true,opciones:['No enviado','Enviado','Firmado']},{label:'Entregables y pagos',tipo:'texto_largo',req:true},{label:'Fechas de pago',tipo:'texto_corto',req:true}],
+    'Presentar propuesta final': [{label:'Modificaciones registradas',tipo:'texto_largo',req:true},{label:'Confirmación de fechas',tipo:'texto_corto',req:true}],
+    'Reenviar con ajustes': [{label:'Aprobación formal',tipo:'opcion_multiple',req:true,opciones:['Pendiente','Aprobado']}],
+    'Firmar contrato': [{label:'Contrato firmado',tipo:'adjunto',req:true},{label:'Fecha de firma',tipo:'texto_corto',req:true}],
+    'Llenar brief de producción': [{label:'Talento asignado',tipo:'texto_corto',req:true},{label:'Fecha de video',tipo:'texto_corto',req:true},{label:'Datos de producción',tipo:'texto_largo',req:true}],
+    'Agendar personal y locación': [{label:'Videográfo asignado',tipo:'texto_corto',req:true},{label:'Fotógrafo asignado',tipo:'texto_corto',req:true},{label:'Locación confirmada',tipo:'texto_corto',req:true},{label:'Disponibilidad verificada',tipo:'opcion_multiple',req:true,opciones:['No','Sí']}],
+    'Hacer escaletas': [{label:'Documento de escaleta',tipo:'adjunto',req:true},{label:'Detalle toma por toma',tipo:'texto_largo',req:true}],
+    'Hacer y enviar hoja de llamado': [{label:'Enviado por WhatsApp',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Documento formal de llamado',tipo:'adjunto',req:true}],
+    'Hacer y enviar plan de trabajo': [{label:'Enviado por WhatsApp',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Documento plan de trabajo',tipo:'adjunto',req:true}],
+    'Agendar en Google Calendar': [{label:'Evento en Google Calendar',tipo:'opcion_multiple',req:true,opciones:['No agendado','Agendado']},{label:'Carpetas en Dropbox creadas',tipo:'opcion_multiple',req:true,opciones:['No','Sí']}],
+    'Recoger equipo necesario': [{label:'Lista de equipo verificada',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Equipo recogido',tipo:'opcion_multiple',req:true,opciones:['No','Sí']}],
+    'Tomar notas de cambios': [{label:'Notas de cambios del día',tipo:'texto_largo',req:true},{label:'Modificaciones para editor',tipo:'texto_largo',req:true}],
+    'Devolver equipo': [{label:'Equipo devuelto',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Validado contra lista',tipo:'opcion_multiple',req:true,opciones:['No','Sí']}],
+    'Respaldar el material': [{label:'Guardado en disco duro',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Subido a Dropbox',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Locación del archivo',tipo:'texto_corto',req:true}],
+    'Asignar editor': [{label:'Editor asignado',tipo:'texto_corto',req:true},{label:'Disponibilidad confirmada',tipo:'opcion_multiple',req:true,opciones:['No','Sí']}],
+    'Realizar 1er corte de edición': [{label:'Primera versión entregada',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Link al material',tipo:'texto_corto',req:true}],
+    'Revisión interna (iterativa)': [{label:'Comentarios internos',tipo:'texto_largo',req:true},{label:'Número de versión',tipo:'texto_corto',req:true},{label:'Aprobado internamente',tipo:'opcion_multiple',req:true,opciones:['No','Sí']}],
+    'Enviar versión aprobada a cliente': [{label:'Material enviado',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Fecha de envío',tipo:'texto_corto',req:true}],
+    'Revisión cliente (iterativa)': [{label:'Comentarios del cliente',tipo:'texto_largo',req:true},{label:'Versión revisada por cliente',tipo:'texto_corto',req:true}],
+    'Aprobación final del cliente': [{label:'VoBo por correo',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Fecha de aprobación',tipo:'texto_corto',req:true}],
+    'Enviar factura': [{label:'Factura enviada',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'CFDI enviado',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Monto de factura',tipo:'texto_corto',req:true}],
+    'Reunión de retroalimentación': [{label:'Minuta de cierre',tipo:'texto_largo',req:true},{label:'Asistentes',tipo:'texto_largo',req:true}],
+    'Agendar evaluación de proyecto': [{label:'Formato de evaluación creado',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Fecha programada',tipo:'texto_corto',req:true}],
+    'Realizar evaluación': [{label:'Formulario completado',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Resultado de evaluación',tipo:'texto_largo',req:true}],
+    'Cobranza': [{label:'Corte de mes realizado',tipo:'opcion_multiple',req:true,opciones:['No','Sí']},{label:'Monto pendiente de cobro',tipo:'texto_corto',req:true}],
+    'Cierre de mes': [{label:'Evaluación cuentas por cobrar',tipo:'texto_largo',req:true},{label:'Evaluación de utilidad',tipo:'texto_largo',req:true}],
+  };
+  const ROLES = {
+    'Tomar información inicial':'Ventas','Evaluación del proyecto':'Ventas','Registrar datos en CRM':'Ventas',
+    'Pasar propuesta al creativo':'Ventas','Propuesta creativa del proyecto':'Creativo','Crear cotización formal':'Productor Ejecutivo',
+    'Enviar cotización a cliente':'Ventas','Aprobación de cliente':'Ventas','Presentar propuesta final':'Director',
+    'Reenviar con ajustes':'Director','Firmar contrato':'Director','Llenar brief de producción':'Responsable de Proyecto',
+    'Agendar personal y locación':'Productor Ejecutivo','Hacer escaletas':'Editor / Director',
+    'Hacer y enviar hoja de llamado':'Asistente de Dirección','Hacer y enviar plan de trabajo':'Asistente de Dirección',
+    'Agendar en Google Calendar':'Responsable de Proyecto','Recoger equipo necesario':'Asistente de Producción',
+    'Tomar notas de cambios':'Asistente de Producción','Devolver equipo':'Asistente de Producción',
+    'Respaldar el material':'Asistente de Producción','Asignar editor':'Coordinador Post-producción',
+    'Realizar 1er corte de edición':'Editor','Revisión interna (iterativa)':'Coordinador Post-producción',
+    'Enviar versión aprobada a cliente':'Coordinador Post-producción','Revisión cliente (iterativa)':'Coordinador Post-producción',
+    'Aprobación final del cliente':'Contacto de Arte','Enviar factura':'Finanzas',
+    'Reunión de retroalimentación':'Responsable de Proyecto','Agendar evaluación de proyecto':'Responsable de Proyecto',
+    'Realizar evaluación':'Director','Cobranza':'Finanzas','Cierre de mes':'Finanzas',
+  };
+  const FASES = {
+    'Tomar información inicial':'Brief / Pitch de Cliente','Evaluación del proyecto':'Brief / Pitch de Cliente','Registrar datos en CRM':'Brief / Pitch de Cliente',
+    'Pasar propuesta al creativo':'Conceptualización / Cotización','Propuesta creativa del proyecto':'Conceptualización / Cotización','Crear cotización formal':'Conceptualización / Cotización','Enviar cotización a cliente':'Conceptualización / Cotización','Aprobación de cliente':'Conceptualización / Cotización',
+    'Presentar propuesta final':'Presentación y Aprobación','Reenviar con ajustes':'Presentación y Aprobación','Firmar contrato':'Presentación y Aprobación','Llenar brief de producción':'Presentación y Aprobación',
+    'Agendar personal y locación':'Pre-Producción','Hacer escaletas':'Pre-Producción','Hacer y enviar hoja de llamado':'Pre-Producción','Hacer y enviar plan de trabajo':'Pre-Producción','Agendar en Google Calendar':'Pre-Producción',
+    'Recoger equipo necesario':'Producción','Tomar notas de cambios':'Producción','Devolver equipo':'Producción','Respaldar el material':'Producción',
+    'Asignar editor':'Post-Producción','Realizar 1er corte de edición':'Post-Producción','Revisión interna (iterativa)':'Post-Producción','Enviar versión aprobada a cliente':'Post-Producción','Revisión cliente (iterativa)':'Post-Producción','Aprobación final del cliente':'Post-Producción','Enviar factura':'Post-Producción',
+    'Reunión de retroalimentación':'Cierre de Proyecto','Agendar evaluación de proyecto':'Cierre de Proyecto','Realizar evaluación':'Cierre de Proyecto','Cobranza':'Cierre de Proyecto','Cierre de mes':'Cierre de Proyecto',
+  };
+  const DURS = {'Tomar información inicial':2,'Evaluación del proyecto':1,'Registrar datos en CRM':1,'Pasar propuesta al creativo':1,'Propuesta creativa del proyecto':3,'Crear cotización formal':2,'Enviar cotización a cliente':1,'Aprobación de cliente':2,'Presentar propuesta final':2,'Reenviar con ajustes':1,'Firmar contrato':1,'Llenar brief de producción':1,'Agendar personal y locación':3,'Hacer escaletas':4,'Hacer y enviar hoja de llamado':1,'Hacer y enviar plan de trabajo':1,'Agendar en Google Calendar':1,'Recoger equipo necesario':1,'Tomar notas de cambios':1,'Devolver equipo':1,'Respaldar el material':1,'Asignar editor':1,'Realizar 1er corte de edición':5,'Revisión interna (iterativa)':3,'Enviar versión aprobada a cliente':1,'Revisión cliente (iterativa)':3,'Aprobación final del cliente':1,'Enviar factura':1,'Reunión de retroalimentación':1,'Agendar evaluación de proyecto':1,'Realizar evaluación':1,'Cobranza':14,'Cierre de mes':5};
+  return Object.keys(FASES).map((nombre,i) => ({
+    id: 'cat_'+i,
+    fase: FASES[nombre],
+    nombre,
+    rol_molvo: ROLES[nombre]||'Ventas',
+    rol_cliente: '',
+    duracion_dias: DURS[nombre]||1,
+    descripcion: '',
+    campos: (FIELDS[nombre]||[]).map((f,j)=>({id:'catf_'+i+'_'+j,...f,opciones:f.opciones?f.opciones.join('|'):''}))
+  }));
+})();
+
+// Catalog stored locally (synced to Sheet on demand)
+let catalogTareas = JSON.parse(localStorage.getItem('molvo_catalog')||'null') || CATALOG_SEED;
+
+function saveCatalog() {
+  localStorage.setItem('molvo_catalog', JSON.stringify(catalogTareas));
+}
+
+function renderCatalogList() {
+  const el = document.getElementById('catalog-task-list');
+  if (!el) return;
+  const phases = [...new Set(catalogTareas.map(t=>t.fase))];
+  const PCOLS = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
+  el.innerHTML = phases.map((fase,pi) => {
+    const tasks = catalogTareas.filter(t=>t.fase===fase);
+    const col = PCOLS[pi%7];
+    return `<div style="border-bottom:0.5px solid var(--border)">
+      <div style="padding:6px 12px;font-family:'Cormorant Garamond',serif;font-size:12px;color:${col};background:${col}10;border-bottom:0.5px solid var(--border)">${fase}</div>
+      ${tasks.map(t=>`<div onclick="selectCatalogTask('${t.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:0.5px solid var(--border);background:${activeCatalogId===t.id?'var(--cream)':'transparent'};border-left:${activeCatalogId===t.id?'2px solid var(--black)':'2px solid transparent'};transition:all 0.1s">
+        <div style="font-size:11px;${activeCatalogId===t.id?'':'color:var(--gray)'}">${t.nombre}</div>
+        <div style="font-size:9px;color:var(--lgray);margin-top:2px">${t.rol_molvo} · ${t.duracion_dias}d · ${t.campos.length} campos</div>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+function selectCatalogTask(id) {
+  activeCatalogId = id;
+  renderCatalogList();
+  renderCatalogEditor();
+}
+
+function renderCatalogEditor() {
+  const el = document.getElementById('catalog-task-editor');
+  if (!el) return;
+  const t = catalogTareas.find(t=>t.id===activeCatalogId);
+  if (!t) return;
+  const TIPO_ICONS = {texto_corto:'Aa',texto_largo:'¶',opcion_multiple:'☰',adjunto:'📎'};
+  const TIPO_LABELS = {texto_corto:'Texto corto',texto_largo:'Respuesta larga',opcion_multiple:'Opción múltiple',adjunto:'Adjunto de documento'};
+
+  el.innerHTML = `
+    <div style="padding:12px 16px;border-bottom:0.5px solid var(--border);background:var(--cream);display:flex;align-items:center;justify-content:space-between">
+      <div style="font-family:'Cormorant Garamond',serif;font-size:16px">${t.nombre}</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-secondary" style="font-size:10px;padding:4px 10px;color:var(--red);border-color:var(--red)" onclick="deleteCatalogTask('${t.id}')">Eliminar tarea</button>
+        <button class="btn-primary" style="font-size:10px;padding:4px 10px" onclick="saveCatalogTask('${t.id}')">Guardar</button>
+      </div>
+    </div>
+    <div style="padding:16px;overflow-y:auto;max-height:calc(100vh - 320px)">
+      <!-- Info general -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+        <div class="form-group"><label class="flabel">Nombre de la tarea</label>
+          <input class="finput" id="ce-nombre" value="${t.nombre}"></div>
+        <div class="form-group"><label class="flabel">Fase</label>
+          <select class="fselect" id="ce-fase">${['Brief / Pitch de Cliente','Conceptualización / Cotización','Presentación y Aprobación','Pre-Producción','Producción','Post-Producción','Cierre de Proyecto'].map(f=>`<option${t.fase===f?' selected':''}>${f}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="flabel">Rol Molvo responsable</label>
+          <select class="fselect" id="ce-rol-molvo">${ALL_ROLES.map(r=>`<option${t.rol_molvo===r?' selected':''}>${r}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="flabel">Rol cliente responsable</label>
+          <select class="fselect" id="ce-rol-cliente"><option value="">— No aplica —</option>${ROLES_CLIENTE.map(r=>`<option${t.rol_cliente===r?' selected':''}>${r}</option>`).join('')}</select></div>
+        <div class="form-group"><label class="flabel">Duración (días)</label>
+          <input type="number" class="finput" id="ce-duracion" value="${t.duracion_dias}" min="1" max="999"></div>
+        <div class="form-group"><label class="flabel">Descripción / Instrucciones</label>
+          <input class="finput" id="ce-desc" value="${t.descripcion||''}" placeholder="Instrucciones para el responsable"></div>
+      </div>
+
+      <!-- Campos -->
+      <div style="font-size:10px;letter-spacing:0.09em;text-transform:uppercase;color:var(--gray);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
+        Campos de esta tarea
+        <button class="btn-secondary" style="font-size:10px;padding:3px 10px" onclick="openAddCatalogFieldModal('${t.id}')">+ Campo</button>
+      </div>
+      ${t.campos.length ? `<div style="display:flex;flex-direction:column;gap:6px">
+        ${t.campos.map((f,fi) => `<div style="border:0.5px solid var(--border);border-radius:7px;padding:10px 12px;display:flex;align-items:flex-start;gap:10px">
+          <div style="width:28px;height:28px;border-radius:5px;background:var(--cream);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">${TIPO_ICONS[f.tipo]||'?'}</div>
+          <div style="flex:1">
+            <div style="font-size:12px">${f.label}</div>
+            <div style="font-size:10px;color:var(--gray);margin-top:2px">${TIPO_LABELS[f.tipo]||f.tipo} · ${f.requerido?'<span style="color:var(--red)">Requerido</span>':'Opcional'}</div>
+            ${f.tipo==='opcion_multiple'&&f.opciones?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">${f.opciones.split('|').map(o=>`<span style="font-size:10px;padding:2px 7px;border:0.5px solid var(--border);border-radius:3px">${o}</span>`).join('')}</div>`:''}
+          </div>
+          <button onclick="deleteCatalogField('${t.id}',${fi})" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:14px;padding:2px;flex-shrink:0">✕</button>
+        </div>`).join('')}
+      </div>` : `<div style="font-size:11px;color:var(--lgray);padding:12px 0">Sin campos configurados. Agrega preguntas o adjuntos.</div>`}
+    </div>`;
+}
+
+function saveCatalogTask(id) {
+  const t = catalogTareas.find(t=>t.id===id);
+  if (!t) return;
+  t.nombre = document.getElementById('ce-nombre').value.trim()||t.nombre;
+  t.fase = document.getElementById('ce-fase').value;
+  t.rol_molvo = document.getElementById('ce-rol-molvo').value;
+  t.rol_cliente = document.getElementById('ce-rol-cliente').value;
+  t.duracion_dias = parseInt(document.getElementById('ce-duracion').value)||1;
+  t.descripcion = document.getElementById('ce-desc').value;
+  saveCatalog();
+  renderCatalogList();
+  renderCatalogEditor();
+  showToast('Tarea guardada ✓', 'success');
+}
+
+function deleteCatalogTask(id) {
+  if (!confirm('Eliminar esta tarea del catálogo?')) return;
+  catalogTareas = catalogTareas.filter(t=>t.id!==id);
+  activeCatalogId = null;
+  saveCatalog();
+  renderCatalogList();
+  document.getElementById('catalog-task-editor').innerHTML = '<div style="padding:40px;text-align:center;color:var(--lgray)">Selecciona una tarea</div>';
+}
+
+function deleteCatalogField(taskId, fieldIdx) {
+  const t = catalogTareas.find(t=>t.id===taskId);
+  if (t) { t.campos.splice(fieldIdx,1); saveCatalog(); renderCatalogEditor(); }
+}
+
+function openNewCatalogTaskModal() {
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Nueva tarea en catálogo</div>
+    <div class="form-grid">
+      <div class="form-group full"><label class="flabel">Nombre</label><input class="finput" id="nc-nombre" placeholder="Nombre de la tarea"></div>
+      <div class="form-group"><label class="flabel">Fase</label>
+        <select class="fselect" id="nc-fase">${['Brief / Pitch de Cliente','Conceptualización / Cotización','Presentación y Aprobación','Pre-Producción','Producción','Post-Producción','Cierre de Proyecto'].map(f=>`<option>${f}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="flabel">Rol Molvo</label>
+        <select class="fselect" id="nc-rol">${ALL_ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="flabel">Rol cliente</label>
+        <select class="fselect" id="nc-rolc"><option value="">— No aplica —</option>${ROLES_CLIENTE.map(r=>`<option>${r}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="flabel">Duración (días)</label><input type="number" class="finput" id="nc-dur" value="1" min="1"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="createCatalogTask()">Crear</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function createCatalogTask() {
+  const nombre = document.getElementById('nc-nombre').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
+  const id = 'cat_'+Date.now();
+  catalogTareas.push({id, fase:document.getElementById('nc-fase').value, nombre, rol_molvo:document.getElementById('nc-rol').value, rol_cliente:document.getElementById('nc-rolc').value, duracion_dias:parseInt(document.getElementById('nc-dur').value)||1, descripcion:'', campos:[]});
+  saveCatalog();
+  closeModal();
+  renderCatalogList();
+  activeCatalogId = id;
+  renderCatalogList();
+  renderCatalogEditor();
+  showToast('Tarea creada ✓','success');
+}
+
+function openAddCatalogFieldModal(taskId) {
+  let opcionesHtml = '';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Nuevo campo</div>
+    <div class="form-grid">
+      <div class="form-group full"><label class="flabel">Etiqueta / Pregunta</label><input class="finput" id="nf-label" placeholder="Ej: ¿Cuál es el objetivo del proyecto?"></div>
+      <div class="form-group"><label class="flabel">Tipo de campo</label>
+        <select class="fselect" id="nf-tipo" onchange="toggleOpciones(this.value)">
+          <option value="texto_corto">Texto corto</option>
+          <option value="texto_largo">Respuesta larga</option>
+          <option value="opcion_multiple">Opción múltiple</option>
+          <option value="adjunto">Adjunto de documento</option>
+        </select></div>
+      <div class="form-group"><label class="flabel">¿Obligatorio?</label>
+        <select class="fselect" id="nf-req"><option value="true">Sí</option><option value="false">No</option></select></div>
+    </div>
+    <div id="opciones-section" style="display:none;margin-top:10px">
+      <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Opciones (máx 5)</div>
+      ${[1,2,3,4,5].map(i=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:10px;color:var(--gray);width:14px">${i}</span><input class="finput" id="opt${i}" placeholder="Opción ${i}" style="flex:1"></div>`).join('')}
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="addCatalogField('${taskId}')">Agregar campo</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function toggleOpciones(tipo) {
+  document.getElementById('opciones-section').style.display = tipo==='opcion_multiple'?'block':'none';
+}
+
+function addCatalogField(taskId) {
+  const label = document.getElementById('nf-label').value.trim();
+  if (!label) { showToast('La etiqueta es obligatoria','error'); return; }
+  const tipo = document.getElementById('nf-tipo').value;
+  const req = document.getElementById('nf-req').value;
+  let opciones = '';
+  if (tipo==='opcion_multiple') {
+    const opts = [1,2,3,4,5].map(i=>document.getElementById('opt'+i).value.trim()).filter(Boolean);
+    if (opts.length<2) { showToast('Agrega al menos 2 opciones','error'); return; }
+    opciones = opts.join('|');
+  }
+  const t = catalogTareas.find(t=>t.id===taskId);
+  if (!t) return;
+  t.campos.push({id:'catf_'+Date.now(),label,tipo,requerido:req,opciones});
+  saveCatalog();
+  closeModal();
+  renderCatalogEditor();
+  showToast('Campo agregado ✓','success');
+}
+
+// ─── CONTACTOS DE CLIENTE ────────────────────────────────────────────────────
+function openAddContactoModal(clienteId) {
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Nuevo contacto</div>
+    <div class="form-grid">
+      <div class="form-group"><label class="flabel">Rol del contacto</label>
+        <select class="fselect" id="ct-rol">${ROLES_CLIENTE.map(r=>`<option>${r}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="flabel">Nombre completo</label><input class="finput" id="ct-nombre" placeholder="Nombre del contacto"></div>
+      <div class="form-group"><label class="flabel">Email</label><input type="email" class="finput" id="ct-email" placeholder="email@empresa.com"></div>
+      <div class="form-group"><label class="flabel">Teléfono</label><input class="finput" id="ct-tel" placeholder="+52 55 0000 0000"></div>
+      <div class="form-group"><label class="flabel">WhatsApp</label><input class="finput" id="ct-wa" placeholder="+52 55 0000 0000"></div>
+      <div class="form-group"><label class="flabel">Medio preferido de contacto</label>
+        <select class="fselect" id="ct-medio">${MEDIOS_CONTACTO.map(m=>`<option>${m}</option>`).join('')}</select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveContacto('${clienteId}')">Guardar</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveContacto(clienteId) {
+  const nombre = document.getElementById('ct-nombre').value.trim();
+  const id = genId();
+  const contacto = {
+    id, cliente_id:clienteId,
+    rol_cliente: document.getElementById('ct-rol').value,
+    nombre,
+    telefono: document.getElementById('ct-tel').value,
+    email: document.getElementById('ct-email').value,
+    whatsapp: document.getElementById('ct-wa').value,
+    medio_preferido: document.getElementById('ct-medio').value,
+  };
+  const ok = await sheetsAppend('contactos_cliente', SHEET_HEADERS.contactos_cliente.map(h=>contacto[h]||''));
+  if (ok) {
+    DB.contactos_cliente.push(contacto);
+    closeModal();
+    selectClient(clienteId);
+    showToast('Contacto guardado ✓','success');
+  }
 }
 
 // ----------------------------------------
