@@ -399,20 +399,26 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 
     <!-- USUARIOS -->
     <div id="config-usuarios">
-      <div class="section-card">
-        <div class="section-title">Usuarios
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="openUserModal()">+ Agregar empleado</button>
-            <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="openBulkUserModal()">⬆ Carga masiva</button>
-            <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="seedSampleData()">⬇ Datos de ejemplo</button>
-            <button class="btn-primary" style="font-size:10px;padding:4px 10px" onclick="openUserManagementModal()">🔐 Usuarios del sistema</button>
+      <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;min-height:500px">
+        <!-- SIDEBAR -->
+        <div style="border:0.5px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
+          <div style="padding:10px 14px;border-bottom:0.5px solid var(--border);background:var(--cream)">
+            <div style="font-family:'Cormorant Garamond',serif;font-size:15px;margin-bottom:8px">Empleados</div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap">
+              <button class="btn-primary" style="font-size:9px;padding:4px 10px;flex:1" onclick="openUserModal()">+ Agregar</button>
+              <button class="btn-secondary" style="font-size:9px;padding:4px 8px" onclick="seedSampleData()" title="Cargar datos de ejemplo">⬇</button>
+              <button class="btn-secondary" style="font-size:9px;padding:4px 8px" onclick="openBulkUserModal()" title="Carga masiva">⬆</button>
+            </div>
+          </div>
+          <div style="flex:1;overflow-y:auto" id="users-grid"></div>
+        </div>
+        <!-- DETAIL PANEL -->
+        <div style="border:0.5px solid var(--border);border-radius:10px;overflow:hidden" id="user-detail-panel">
+          <div style="padding:40px;text-align:center;color:var(--lgray)">
+            <div style="font-size:24px;margin-bottom:8px">👤</div>
+            <div>Selecciona un empleado para ver su detalle</div>
           </div>
         </div>
-        <div class="config-grid" id="users-grid"></div>
-      </div>
-      <div class="section-card">
-        <div class="section-title">Roles</div>
-        <div class="role-chips" id="roles-container"></div>
       </div>
     </div>
 
@@ -2212,7 +2218,7 @@ function selectClient(id) {
               ${ct.email?`<span class="contact-chip">✉ ${ct.email}</span>`:''}
               ${ct.telefono?`<span class="contact-chip">☎ ${ct.telefono}</span>`:''}
               ${ct.whatsapp?`<span class="contact-chip">WA ${ct.whatsapp}</span>`:''}
-              <span onclick="openCreateClientContactUserModal('${ct.nombre}','${ct.id}')" style="font-size:9px;padding:1px 7px;border:0.5px solid var(--border);border-radius:3px;cursor:pointer;font-family:'DM Mono',monospace;background:var(--white);color:var(--gray)">+ usuario</span>
+
             </div>
           </div>`;
         }).join('') : '<div style="font-size:11px;color:var(--lgray);padding:8px 0">Sin contactos registrados. Usa + Agregar.</div>'}
@@ -2847,26 +2853,139 @@ function saveTipos() {
   if (s) { try { tipoTasks = JSON.parse(s); } catch(e){} }
 })();
 
+let activeUserId = null;
+
 function renderConfig() {
   const gc = document.getElementById('users-grid');
   if (!gc) return;
-  gc.innerHTML = DB.usuarios.map(u => `
-    <div class="user-card" style="position:relative">
-      <button onclick="deleteUser('${u.id}')" style="position:absolute;top:8px;right:8px;border:none;background:none;cursor:pointer;font-size:12px;color:var(--lgray)">✕</button>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <div class="user-av" style="width:32px;height:32px;font-size:12px;background:${u.color||'#888'}22;color:${u.color||'#888'}">${u.iniciales}</div>
-        <div><div style="font-size:13px">${u.nombre}</div><div style="font-size:10px;color:var(--gray)">${u.roles}</div></div>
+  if (!DB.usuarios.length) {
+    gc.innerHTML = '<div style="padding:16px;font-size:11px;color:var(--gray)">Sin empleados. Usa + Agregar.</div>';
+    return;
+  }
+  gc.innerHTML = DB.usuarios.map(u => {
+    const sysUser = getMolvoUsers().find(su=>su.empleadoId===u.id||su.username===u.nombre.toLowerCase().replace(/\s+/g,'_'));
+    const hasLogin = !!sysUser;
+    const isSel = activeUserId===u.id;
+    return `<div onclick="selectUserDetail('${u.id}')" style="padding:10px 14px;border-bottom:0.5px solid var(--border);cursor:pointer;background:${isSel?'var(--cream)':'transparent'};border-left:${isSel?'2px solid var(--black)':'2px solid transparent'};transition:all 0.1s">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="user-av" style="width:28px;height:28px;font-size:11px;background:${u.color||'#888'}22;color:${u.color||'#888'};flex-shrink:0">${u.iniciales}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${u.nombre}</div>
+          <div style="font-size:9px;color:var(--lgray);margin-top:1px">${(u.roles||'').split(',')[0].trim()}</div>
+        </div>
+        <div style="width:7px;height:7px;border-radius:50%;background:${hasLogin?'var(--green)':'var(--border)'};flex-shrink:0" title="${hasLogin?'Con acceso al sistema':'Sin acceso'}"></div>
       </div>
-      <div style="font-size:10px;color:var(--gray)">✉ ${u.email||'—'}</div>
-      <div style="font-size:10px;color:var(--gray)">☎ ${u.telefono||'—'}</div>
-      <div style="font-size:10px;color:var(--gray)">WA ${u.whatsapp||'—'}</div>
-    </div>`).join('') || '<div style="color:var(--gray);font-size:11px">Sin usuarios. Usa "Cargar datos de ejemplo" para empezar.</div>';
+    </div>`;
+  }).join('');
+}
 
-  const rc = document.getElementById('roles-container');
-  if (!rc) return;
-  const roles = DB.usuarios.flatMap(u => (u.roles||'').split(',')).filter(Boolean);
-  const uniqueRoles = [...new Set([...ALL_ROLES, ...roles])];
-  rc.innerHTML = uniqueRoles.map(r => `<div class="role-chip">${r}</div>`).join('');
+function selectUserDetail(userId) {
+  activeUserId = userId;
+  renderConfig();
+  renderUserDetail(userId);
+}
+
+function renderUserDetail(userId) {
+  const panel = document.getElementById('user-detail-panel');
+  if (!panel) return;
+  const u = DB.usuarios.find(u=>u.id===userId);
+  if (!u) return;
+  const sysUsers = getMolvoUsers();
+  const sysUser = sysUsers.find(su=>su.empleadoId===userId) ||
+                  sysUsers.find(su=>su.nombre===u.nombre);
+  const isAdmin = currentMolvoUser?.rol==='admin';
+
+  const roleLabel = sysUser ? (MOLVO_ROLES[sysUser.rol]||{label:sysUser.rol,color:'#888'}) : null;
+
+  panel.innerHTML = `
+    <div style="padding:14px 18px;border-bottom:0.5px solid var(--border);background:var(--cream);display:flex;align-items:center;justify-content:space-between">
+      <div style="font-family:'Cormorant Garamond',serif;font-size:17px">${u.nombre}</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="openEditUserEmpModal('${u.id}')">✎ Editar</button>
+        <button class="btn-secondary" style="font-size:10px;padding:4px 10px;color:var(--red);border-color:var(--red)" onclick="deleteUser('${u.id}')">✕ Eliminar</button>
+      </div>
+    </div>
+    <div style="padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <!-- Info empleado -->
+      <div style="border:0.5px solid var(--border);border-radius:8px;padding:12px">
+        <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:10px">Datos del empleado</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div class="user-av" style="width:40px;height:40px;font-size:14px;background:${u.color||'#888'}22;color:${u.color||'#888'}">${u.iniciales}</div>
+          <div>
+            <div style="font-size:13px">${u.nombre}</div>
+            <div style="font-size:10px;color:var(--gray)">${u.roles||'—'}</div>
+          </div>
+        </div>
+        ${u.email?`<div style="font-size:11px;color:var(--gray);padding:4px 0">✉ ${u.email}</div>`:''}
+        ${u.telefono?`<div style="font-size:11px;color:var(--gray);padding:4px 0">☎ ${u.telefono}</div>`:''}
+        ${u.whatsapp?`<div style="font-size:11px;color:var(--gray);padding:4px 0">WA ${u.whatsapp}</div>`:''}
+      </div>
+      <!-- Acceso al sistema -->
+      <div style="border:0.5px solid var(--border);border-radius:8px;padding:12px">
+        <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:10px">Acceso al sistema</div>
+        ${sysUser ? `
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--green)"></div>
+            <span style="font-size:11px">Usuario activo</span>
+          </div>
+          <div style="font-size:11px;color:var(--gray);margin-bottom:4px">Usuario: <b style="color:var(--black)">${sysUser.username}</b></div>
+          <div style="margin-bottom:8px"><span style="font-size:9px;padding:2px 7px;border-radius:3px;background:${roleLabel.color}22;color:${roleLabel.color}">${roleLabel.label}</span></div>
+          ${isAdmin?`
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border)">
+            <div style="font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px">Editar acceso</div>
+            <select id="ud-rol-${u.id}" style="padding:5px 8px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:11px;background:var(--white)">
+              <option value="usuario"${sysUser.rol==='usuario'?' selected':''}>Usuario — Completar tareas</option>
+              <option value="usuario_clave"${sysUser.rol==='usuario_clave'?' selected':''}>Usuario Clave — Crear proyectos</option>
+              <option value="admin"${sysUser.rol==='admin'?' selected':''}>Administrador — Acceso total</option>
+            </select>
+            <input type="password" id="ud-pass-${u.id}" class="finput" placeholder="Nueva contraseña (dejar vacío = sin cambio)" style="font-size:11px">
+            <button class="btn-primary" style="font-size:10px;padding:5px" onclick="saveUserAccess('${u.id}','${sysUser.id}')">Guardar cambios de acceso</button>
+          </div>`:''}
+        ` : `
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--border)"></div>
+            <span style="font-size:11px;color:var(--gray)">Sin acceso al sistema</span>
+          </div>
+          ${isAdmin?`
+          <div style="font-size:10px;color:var(--gray);margin-bottom:8px">Crear credenciales de acceso:</div>
+          <input class="finput" id="ud-uname-${u.id}" placeholder="nombre_usuario" style="font-size:11px;margin-bottom:6px">
+          <input type="password" class="finput" id="ud-newpass-${u.id}" value="9876Molvo" style="font-size:11px;margin-bottom:6px">
+          <select id="ud-newrol-${u.id}" style="width:100%;padding:5px 8px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:11px;background:var(--white);margin-bottom:8px">
+            <option value="usuario">Usuario</option>
+            <option value="usuario_clave">Usuario Clave</option>
+            <option value="admin">Administrador</option>
+          </select>
+          <button class="btn-primary" style="width:100%;font-size:10px;padding:6px" onclick="createAccessForEmployee('${u.id}')">Crear acceso</button>
+          `:'<div style="font-size:11px;color:var(--lgray)">Solo el administrador puede crear accesos.</div>'}
+        `}
+      </div>
+    </div>`;
+}
+
+async function saveUserAccess(empId, sysUserId) {
+  const users = getMolvoUsers();
+  const su = users.find(u=>u.id===sysUserId);
+  if (!su) return;
+  su.rol = document.getElementById('ud-rol-'+empId)?.value || su.rol;
+  const newPass = document.getElementById('ud-pass-'+empId)?.value;
+  if (newPass) su.passwordHash = await hashPassword(newPass);
+  saveMolvoUsers(users);
+  renderUserDetail(empId);
+  showToast('Acceso actualizado ✓','success');
+}
+
+async function createAccessForEmployee(empId) {
+  const u = DB.usuarios.find(u=>u.id===empId);
+  if (!u) return;
+  const username = document.getElementById('ud-uname-'+empId)?.value.trim();
+  const pass = document.getElementById('ud-newpass-'+empId)?.value || '9876Molvo';
+  const rol = document.getElementById('ud-newrol-'+empId)?.value || 'usuario';
+  if (!username) { showToast('Escribe un nombre de usuario','error'); return; }
+  const ok = await createMolvoUser(username, u.nombre, rol, empId, pass);
+  if (!ok) { showToast('Ese usuario ya existe','error'); return; }
+  renderUserDetail(empId);
+  renderConfig();
+  showToast('Acceso creado ✓','success');
 }
 
 function deleteUser(id) {
@@ -3034,10 +3153,58 @@ async function saveUser() {
   const ok = await sheetsAppend('usuarios', values);
   if (ok) {
     DB.usuarios.push(user);
+    // Auto-create system user if admin
+    if (currentMolvoUser?.rol==='admin') {
+      const username = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+      await createMolvoUser(username, name, 'usuario', id, '9876Molvo');
+    }
     closeModal();
+    activeUserId = id;
     renderConfig();
-    showToast('Usuario guardado ✓', 'success');
+    renderUserDetail(id);
+    showToast('Empleado creado ✓ — acceso con password 9876Molvo', 'success');
   }
+}
+
+function openEditUserEmpModal(userId) {
+  const u = DB.usuarios.find(u=>u.id===userId);
+  if (!u) return;
+  const colors = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Editar empleado</div>
+    <div class="form-grid">
+      <div class="form-group"><label class="flabel">Nombre completo</label><input class="finput" id="eu-emp-name" value="${u.nombre}"></div>
+      <div class="form-group"><label class="flabel">Iniciales</label><input class="finput" id="eu-emp-ini" maxlength="2" value="${u.iniciales}"></div>
+      <div class="form-group full"><label class="flabel">Roles (separados por coma)</label><input class="finput" id="eu-emp-roles" value="${u.roles||''}"></div>
+      <div class="form-group"><label class="flabel">Email</label><input class="finput" id="eu-emp-email" value="${u.email||''}"></div>
+      <div class="form-group"><label class="flabel">Teléfono</label><input class="finput" id="eu-emp-tel" value="${u.telefono||''}"></div>
+      <div class="form-group"><label class="flabel">WhatsApp</label><input class="finput" id="eu-emp-wa" value="${u.whatsapp||''}"></div>
+      <div class="form-group"><label class="flabel">Color</label>
+        <select class="fselect" id="eu-emp-color">${colors.map(col=>`<option value="${col}"${u.color===col?' selected':''}>${col}</option>`).join('')}</select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveEditEmp('${userId}')">Guardar</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveEditEmp(userId) {
+  const u = DB.usuarios.find(u=>u.id===userId);
+  if (!u) return;
+  u.nombre = document.getElementById('eu-emp-name').value.trim()||u.nombre;
+  u.iniciales = document.getElementById('eu-emp-ini').value||u.iniciales;
+  u.roles = document.getElementById('eu-emp-roles').value;
+  u.email = document.getElementById('eu-emp-email').value;
+  u.telefono = document.getElementById('eu-emp-tel').value;
+  u.whatsapp = document.getElementById('eu-emp-wa').value;
+  u.color = document.getElementById('eu-emp-color').value;
+  const rowNum = getRowNum('usuarios', userId);
+  if (rowNum>=0) await sheetsUpdate('usuarios', rowNum, SHEET_HEADERS.usuarios.map(h=>u[h]||''));
+  closeModal();
+  renderConfig();
+  renderUserDetail(userId);
+  showToast('Empleado actualizado ✓','success');
 }
 
 function addRole() {
@@ -3696,9 +3863,14 @@ async function saveContacto(clienteId) {
   const ok = await sheetsAppend('contactos_cliente', SHEET_HEADERS.contactos_cliente.map(h=>contacto[h]||''));
   if (ok) {
     DB.contactos_cliente.push(contacto);
+    // Auto-create system user for contact if admin
+    if (currentMolvoUser?.rol==='admin' && nombre) {
+      const username = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+      await createMolvoUser(username+'_c', nombre, 'usuario', id, '9876Molvo');
+    }
     closeModal();
     selectClient(clienteId);
-    showToast('Contacto guardado ✓','success');
+    showToast('Contacto guardado ✓'+(currentMolvoUser?.rol==='admin'?' — acceso creado con 9876Molvo':''),'success');
   }
 }
 
