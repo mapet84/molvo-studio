@@ -7,17 +7,20 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
 :root {
-  --black: #0e0e0e;
-  --white: #f5f3ef;
-  --cream: #ede9e1;
-  --gray: #8a8680;
-  --lgray: #d4d0c8;
-  --border: #e0dcd4;
-  --accent: #c8a96e;
-  --red: #b84444;
-  --green: #3d7a5a;
-  --blue: #3a5f8a;
-  --warn: #c4892a;
+  --black: #0a0a0a;
+  --white: #f7f4ee;
+  --cream: #eeeae0;
+  --gray: #7a7570;
+  --lgray: #ccc8bf;
+  --border: #dedad2;
+  --accent: #c9a96e;
+  --red: #a83838;
+  --green: #2e6b47;
+  --blue: #2a4f7a;
+  --warn: #b87820;
+  --gold: #c9a96e;
+  --gold-light: #e8d5a8;
+  --sand: #f0ebe0;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'DM Mono', monospace; background: var(--white); color: var(--black); font-size: 12px; min-height: 100vh; }
@@ -32,12 +35,13 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 .auth-sub { font-size: 11px; letter-spacing: 0.12em; color: var(--gray); margin-bottom: 40px; }
 .auth-btn {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 28px; background: var(--white); color: var(--black);
-  border: none; border-radius: 6px; font-family: 'DM Mono', monospace;
-  font-size: 12px; letter-spacing: 0.08em; cursor: pointer; transition: opacity 0.15s;
+  padding: 13px 32px; background: var(--white); color: var(--black);
+  border: 1px solid var(--gold); border-radius: 4px; font-family: 'DM Mono', monospace;
+  font-size: 12px; letter-spacing: 0.1em; cursor: pointer; transition: all 0.2s;
 }
-.auth-btn:hover { opacity: 0.9; }
+.auth-btn:hover { background: var(--gold); color: var(--black); }
 .auth-btn img { width: 20px; height: 20px; }
+.auth-sub { font-size: 10px; letter-spacing: 0.18em; color: #666; margin-bottom: 44px; }
 .auth-status { margin-top: 16px; font-size: 11px; color: var(--gray); }
 
 /* TOPBAR */
@@ -244,6 +248,20 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 
 <!-- AUTH SCREEN -->
 <div id="auth-screen">
+  <!-- Molvo Isotipo (dots) -->
+  <div style="margin-bottom:24px">
+    <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="10" cy="10" r="5" fill="#c9a96e"/>
+      <circle cx="26" cy="10" r="5" fill="#c9a96e"/>
+      <circle cx="42" cy="10" r="5" fill="#c9a96e"/>
+      <circle cx="10" cy="26" r="5" fill="#c9a96e"/>
+      <circle cx="26" cy="26" r="5" fill="#c9a96e"/>
+      <circle cx="42" cy="26" r="5" fill="#c9a96e"/>
+      <circle cx="10" cy="42" r="5" fill="#c9a96e"/>
+      <circle cx="26" cy="42" r="5" fill="#c9a96e"/>
+      <circle cx="42" cy="42" r="5" fill="#c9a96e"/>
+    </svg>
+  </div>
   <div class="auth-logo">MOLVO <b>FILMS</b></div>
   <div class="auth-sub">STUDIO · PROJECT MANAGEMENT</div>
   <button class="auth-btn" onclick="signIn()">
@@ -263,7 +281,20 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 <!-- MAIN APP -->
 <div id="main-app" style="display:none">
   <div id="topbar">
-    <div class="logo">MOLVO <b>FILMS</b> <span style="font-size:11px;font-weight:300;color:var(--gray);font-family:'DM Mono',monospace"> / STUDIO</span></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <svg width="22" height="22" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="10" cy="10" r="5" fill="#c9a96e"/>
+        <circle cx="26" cy="10" r="5" fill="#c9a96e"/>
+        <circle cx="42" cy="10" r="5" fill="#c9a96e"/>
+        <circle cx="10" cy="26" r="5" fill="#c9a96e"/>
+        <circle cx="26" cy="26" r="5" fill="#c9a96e"/>
+        <circle cx="42" cy="26" r="5" fill="#c9a96e"/>
+        <circle cx="10" cy="42" r="5" fill="#c9a96e"/>
+        <circle cx="26" cy="42" r="5" fill="#c9a96e"/>
+        <circle cx="42" cy="42" r="5" fill="#c9a96e"/>
+      </svg>
+      <div class="logo">MOLVO <b>FILMS</b> <span style="font-size:11px;font-weight:300;color:var(--gray);font-family:'DM Mono',monospace"> / STUDIO</span></div>
+    </div>
     <div class="nav-tabs">
       <button class="nav-tab active" onclick="showPanel('overview')">Overview</button>
       <button class="nav-tab" onclick="showPanel('projects')">Proyectos</button>
@@ -297,6 +328,7 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
       <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300" id="proj-title">Selecciona un proyecto</div>
       <div style="display:flex;gap:8px">
         <select class="fselect" id="project-selector" onchange="loadProject(this.value)" style="min-width:200px"></select>
+        <button class="btn-secondary" onclick="confirmDeleteProject()" id="btn-delete-proj" style="display:none;color:var(--red);border-color:var(--red)">✕ Eliminar</button>
         <button class="btn-primary" onclick="openNewProjectModal()">+ Nuevo proyecto</button>
       </div>
     </div>
@@ -310,7 +342,10 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
       <div class="crm-sidebar">
         <div class="crm-sidebar-header">
           <div style="font-family:'Cormorant Garamond',serif;font-size:16px">Clientes</div>
-          <button class="btn-primary" style="padding:4px 10px;font-size:10px" onclick="openClientModal()">+</button>
+          <div style="display:flex;gap:5px">
+            <button class="btn-secondary" style="padding:3px 8px;font-size:10px" onclick="openCsvImportModal()" title="Importar CSV">⬆ CSV</button>
+            <button class="btn-primary" style="padding:4px 10px;font-size:10px" onclick="openClientModal()">+</button>
+          </div>
         </div>
         <div style="padding:8px 12px;border-bottom:0.5px solid var(--border)">
           <input class="finput" placeholder="Buscar..." oninput="filterClients(this.value)" style="width:100%;padding:5px 8px">
@@ -335,8 +370,12 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
     <!-- USUARIOS -->
     <div id="config-usuarios">
       <div class="section-card">
-        <div class="section-title">Usuarios <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="openUserModal()">+ Agregar</button>
-          <button class="btn-secondary" style="font-size:10px;padding:4px 10px;margin-left:6px" onclick="seedSampleData()">⬇ Cargar datos de ejemplo</button>
+        <div class="section-title">Usuarios
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="openUserModal()">+ Agregar</button>
+            <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="openBulkUserModal()">⬆ Carga masiva</button>
+            <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="seedSampleData()">⬇ Datos de ejemplo</button>
+          </div>
         </div>
         <div class="config-grid" id="users-grid"></div>
       </div>
@@ -382,7 +421,7 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 </div>
 
 <script>
-// ─── CONSTANTS ─────────────────────────────────────────────────────────────
+// ----------------------------------------
 const CLIENT_ID = '893121171958-p34ap7ll9re2etcd90la4vgmu61r39b4.apps.googleusercontent.com';
 const API_KEY   = 'AIzaSyBNjGDDr-pao-yDcOuzFsb6Qi-STi65Rvc';
 const SHEET_ID  = '1KraykEXxIz99xymH9KSoka5MjodhqA0LMh8cklwU7tY';
@@ -394,13 +433,13 @@ const STATUS_COLORS = {'En progreso':'#3a5f8a','Atrasado':'#b84444','En riesgo':
 const DEFAULT_PHASES = ['Brief / Pitch de Cliente','Conceptualización / Cotización','Presentación y Aprobación','Pre-Producción','Producción','Post-Producción','Cierre de Proyecto'];
 const ALL_ROLES = ['Ventas','Creativo','Productor Ejecutivo','Asistente de Dirección','Asistente de Producción','Coordinador Post-producción','Editor','Director','Finanzas','Responsable de Proyecto'];
 
-// ─── STATE ──────────────────────────────────────────────────────────────────
+// ----------------------------------------
 let tokenClient, accessToken;
 let DB = { proyectos:[], tareas:[], campos_tarea:[], clientes:[], accionables_pago:[], usuarios:[], asignaciones:[] };
 let activeProjectId = null, activeTaskId = null, activeFieldKey = null;
 let selectedClientId = null;
 
-// ─── AUTH ───────────────────────────────────────────────────────────────────
+// ----------------------------------------
 function loadGapi() {
   return new Promise(res => {
     const s = document.createElement('script');
@@ -481,7 +520,7 @@ function signOut() {
 
 function setLoading(msg) { document.getElementById('loading-msg').textContent = msg; }
 
-// ─── SHEETS API HELPERS ─────────────────────────────────────────────────────
+// ----------------------------------------
 async function sheetsGet(range) {
   const r = await gapi.client.sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range });
   return r.result.values || [];
@@ -568,7 +607,7 @@ async function sheetsBatchAppend(sheet, rowsArray) {
   }
 }
 
-// ─── INIT STRUCTURE ─────────────────────────────────────────────────────────
+// ----------------------------------------
 const SHEET_HEADERS = {
   proyectos:      ['id','nombre','cliente_id','status','fecha_inicio','fecha_fin','presupuesto','tipo','descripcion','responsable_id','creado_en'],
   tareas:         ['id','proyecto_id','fase','nombre','rol','usuario_id','start_day','duracion','done','creado_en'],
@@ -605,7 +644,7 @@ async function initSheetStructure(silent=false) {
   }
 }
 
-// ─── LOAD ALL DATA ───────────────────────────────────────────────────────────
+// ----------------------------------------
 async function loadAllData() {
   for (const sheet of Object.keys(SHEET_HEADERS)) {
     try {
@@ -620,7 +659,7 @@ async function loadAllData() {
   }
 }
 
-// ─── ID GENERATION ───────────────────────────────────────────────────────────
+// ----------------------------------------
 function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2,4); }
 
 function getRowNum(sheet, id) {
@@ -629,7 +668,7 @@ function getRowNum(sheet, id) {
   return idx === -1 ? -1 : idx + 2; // +2 for header row + 1-indexing
 }
 
-// ─── OVERVIEW ────────────────────────────────────────────────────────────────
+// ----------------------------------------
 function renderOverview() {
   const projs = DB.proyectos;
   const active = projs.filter(p => ['En progreso','Atrasado','En riesgo'].includes(p.status)).length;
@@ -664,7 +703,7 @@ function renderOverview() {
   }).join('');
 }
 
-// ─── PROJECT SELECTOR ────────────────────────────────────────────────────────
+// ----------------------------------------
 function renderProjectSelector() {
   const sel = document.getElementById('project-selector');
   sel.innerHTML = '<option value="">— Selecciona proyecto —</option>' +
@@ -673,10 +712,15 @@ function renderProjectSelector() {
 }
 
 async function loadProject(projId) {
-  if (!projId) { document.getElementById('phases-container').innerHTML=''; return; }
+  if (!projId) {
+    document.getElementById('phases-container').innerHTML='';
+    document.getElementById('btn-delete-proj').style.display='none';
+    return;
+  }
   activeProjectId = projId;
   activeTaskId = null;
   document.getElementById('detail-wrap').style.display = 'none';
+  document.getElementById('btn-delete-proj').style.display = 'inline-flex';
   const proj = DB.proyectos.find(p => p.id === projId);
   document.getElementById('proj-title').textContent = proj ? proj.nombre : '';
   renderProject();
@@ -940,7 +984,7 @@ async function saveFieldVal(fieldId, taskId) {
 
 function closeDetail() { activeTaskId=null; activeFieldKey=null; document.getElementById('detail-wrap').style.display='none'; renderProject(); }
 
-// ─── RESOURCE ASSIGNMENT MODAL ───────────────────────────────────────────────
+// ----------------------------------------
 let pendingAssignments = {};
 let currentResTask = null;
 let currentResMode = 'early';
@@ -1128,7 +1172,7 @@ async function saveAllAssignments(proyId) {
   showToast(`${assigned.length} asignaciones guardadas ✓`, 'success');
 }
 
-// ─── NEW PROJECT MODAL ────────────────────────────────────────────────────────
+// ----------------------------------------
 function openNewProjectModal() {
   const clients = DB.clientes;
   document.getElementById('modal-body').innerHTML = `
@@ -1247,7 +1291,7 @@ async function createProject() {
   setTimeout(() => openResourceAssignmentModal(id, 'early'), 600);
 }
 
-// ─── ADD TASK MODAL ───────────────────────────────────────────────────────────
+// ----------------------------------------
 function openAddTaskModal(phase, phColor) {
   const users = DB.usuarios;
   document.getElementById('modal-body').innerHTML = `
@@ -1295,7 +1339,7 @@ async function createTask(phase) {
   }
 }
 
-// ─── ADD FIELD MODAL ──────────────────────────────────────────────────────────
+// ----------------------------------------
 function openAddFieldModal(taskId) {
   document.getElementById('modal-body').innerHTML = `
     <div class="modal-title">Nuevo campo</div>
@@ -1338,7 +1382,7 @@ async function createField(taskId) {
   }
 }
 
-// ─── CRM ──────────────────────────────────────────────────────────────────────
+// ----------------------------------------
 function renderClientList(filter='') {
   const filtered = DB.clientes.filter(c => !filter || c.nombre.toLowerCase().includes(filter.toLowerCase()) || c.rfc.toLowerCase().includes(filter.toLowerCase()));
   document.getElementById('client-list').innerHTML = filtered.map(c => `
@@ -1469,7 +1513,7 @@ async function saveClient(editId) {
   }
 }
 
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
+// ----------------------------------------
 let templateTasks = null; // null = use STANDARD_TASKS, array = user-edited
 
 function showConfigTab(tab) {
@@ -1742,9 +1786,9 @@ async function seedSampleData() {
     DB.clientes.push(client);
     // Default accionables
     const acs = [
-      {id:genId(),cliente_id:id,label:'Anticipo firma contrato',porcentaje:'40',tarea_ref:'Firmar contrato'},
-      {id:genId(),cliente_id:id,label:'Entrega primer corte',porcentaje:'30',tarea_ref:'Realizar 1er corte de edición'},
-      {id:genId(),cliente_id:id,label:'Aprobación final',porcentaje:'30',tarea_ref:'Aprobación final del cliente'},
+      {id:genId(),cliente_id:id,label:"Anticipo firma contrato",porcentaje:"40",tarea_ref:"Firmar contrato"},
+      {id:genId(),cliente_id:id,label:"Entrega primer corte",porcentaje:"30",tarea_ref:"Realizar 1er corte de edicion"},
+      {id:genId(),cliente_id:id,label:"Aprobacion final",porcentaje:"30",tarea_ref:"Aprobacion final del cliente"},
     ];
     for (const a of acs) {
       await sheetsAppend('accionables_pago', SHEET_HEADERS.accionables_pago.map(h=>a[h]||''));
@@ -1759,7 +1803,195 @@ async function seedSampleData() {
   showToast('Datos de ejemplo cargados ✓', 'success');
 }
 
-// ─── UTILS ────────────────────────────────────────────────────────────────────
+// ----------------------------------------
+function confirmDeleteProject() {
+  const proj = DB.proyectos.find(p => p.id === activeProjectId);
+  if (!proj) return;
+  if (!confirm('¿Eliminar el proyecto "' + proj.nombre + '" y todas sus tareas? Esta acción no se puede deshacer.')) return;
+  deleteProject(proj.id);
+}
+
+async function deleteProject(projId) {
+  showToast('Eliminando proyecto...', 'info');
+  // Clear tasks & fields from DB and Sheet
+  const tasks = DB.tareas.filter(t => t.proyecto_id === projId);
+  for (const t of tasks) {
+    const tRow = getRowNum('tareas', t.id);
+    if (tRow >= 0) await sheetsClear('tareas', tRow);
+    const fields = DB.campos_tarea.filter(c => c.tarea_id === t.id);
+    for (const f of fields) {
+      const fRow = getRowNum('campos_tarea', f.id);
+      if (fRow >= 0) await sheetsClear('campos_tarea', fRow);
+    }
+  }
+  // Clear project row
+  const pRow = getRowNum('proyectos', projId);
+  if (pRow >= 0) await sheetsClear('proyectos', pRow);
+  // Remove from DB
+  DB.proyectos = DB.proyectos.filter(p => p.id !== projId);
+  DB.tareas = DB.tareas.filter(t => t.proyecto_id !== projId);
+  DB.campos_tarea = DB.campos_tarea.filter(c => !tasks.find(t => t.id === c.tarea_id));
+  activeProjectId = null;
+  document.getElementById('btn-delete-proj').style.display = 'none';
+  document.getElementById('detail-wrap').style.display = 'none';
+  document.getElementById('phases-container').innerHTML = '';
+  document.getElementById('proj-title').textContent = 'Selecciona un proyecto';
+  renderProjectSelector();
+  renderOverview();
+  showToast('Proyecto eliminado ✓', 'success');
+}
+
+// ----------------------------------------
+function openCsvImportModal() {
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Importar clientes desde CSV</div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:14px;line-height:1.7">
+      El CSV debe tener estas columnas en orden (primera fila = encabezados):<br>
+      <code style="background:var(--cream);padding:2px 6px;border-radius:3px;font-size:10px">nombre, rfc, tipo, dias_pago, metodo_pago, contacto_nombre, cargo, email_comercial, email_facturacion, email_aprobacion, telefono, whatsapp, notas</code>
+    </div>
+    <div style="border:1.5px dashed var(--border);border-radius:8px;padding:24px;text-align:center;margin-bottom:14px;cursor:pointer" onclick="document.getElementById('csv-input').click()">
+      <div style="font-size:24px;margin-bottom:8px">📄</div>
+      <div style="font-size:12px;color:var(--gray)">Haz clic para seleccionar archivo CSV</div>
+      <div id="csv-filename" style="font-size:11px;color:var(--accent);margin-top:6px"></div>
+    </div>
+    <input type="file" id="csv-input" accept=".csv" style="display:none" onchange="parseCsvFile(this)">
+    <div id="csv-preview" style="margin-bottom:14px"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" id="csv-import-btn" style="display:none" onclick="importCsvClients()">Importar</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+let csvParsedClients = [];
+
+function parseCsvFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('csv-filename').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const lines = e.target.result.split('
+').filter(l => l.trim());
+    if (lines.length < 2) { showToast('CSV vacío o inválido', 'error'); return; }
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z_]/g,''));
+    const EXPECTED = ['nombre','rfc','tipo','dias_pago','metodo_pago','contacto_nombre','cargo','email_comercial','email_facturacion','email_aprobacion','telefono','whatsapp','notas'];
+    csvParsedClients = [];
+    for (let i = 1; i < lines.length; i++) {
+      const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g,''));
+      const obj = {};
+      EXPECTED.forEach((key, idx) => { obj[key] = vals[idx] || ""; });
+      if (obj.nombre) csvParsedClients.push(obj);
+    }
+    const prev = document.getElementById('csv-preview');
+    prev.innerHTML = `<div style="font-size:11px;color:var(--green);margin-bottom:8px">✓ ${csvParsedClients.length} clientes detectados</div>
+      <div style="max-height:160px;overflow-y:auto;border:0.5px solid var(--border);border-radius:6px">
+        ${csvParsedClients.slice(0,5).map(c=>`<div style="padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:11px">${c.nombre} <span style="color:var(--gray)">· ${c.rfc} · ${c.tipo}</span></div>`).join('')}
+        ${csvParsedClients.length>5?`<div style="padding:6px 10px;font-size:10px;color:var(--gray)">...y ${csvParsedClients.length-5} más</div>`:''}
+      </div>`;
+    document.getElementById('csv-import-btn').style.display = 'block';
+  };
+  reader.readAsText(file);
+}
+
+async function importCsvClients() {
+  if (!csvParsedClients.length) return;
+  closeModal();
+  showToast(`Importando ${csvParsedClients.length} clientes...`, 'info');
+  const now = new Date().toISOString();
+  let count = 0;
+  for (const c of csvParsedClients) {
+    if (DB.clientes.find(ex => ex.nombre === c.nombre && ex.rfc === c.rfc)) continue;
+    const id = genId();
+    const client = {...c, id, creado_en: now};
+    const ok = await sheetsAppend('clientes', SHEET_HEADERS.clientes.map(h => client[h] || ''));
+    if (ok) { DB.clientes.push(client); count++; }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  renderClientList();
+  showToast(`${count} clientes importados ✓`, 'success');
+}
+
+// ----------------------------------------
+function openBulkUserModal() {
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Carga masiva de usuarios</div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:14px;line-height:1.7">
+      CSV con columnas:<br>
+      <code style="background:var(--cream);padding:2px 6px;border-radius:3px;font-size:10px">nombre, iniciales, roles, email, telefono, whatsapp, color</code><br>
+      <span style="font-size:10px">Roles separados por punto y coma. Color en hex (#3a5f8a).</span>
+    </div>
+    <div style="border:1.5px dashed var(--border);border-radius:8px;padding:24px;text-align:center;margin-bottom:14px;cursor:pointer" onclick="document.getElementById('user-csv-input').click()">
+      <div style="font-size:24px;margin-bottom:8px">👤</div>
+      <div style="font-size:12px;color:var(--gray)">Seleccionar CSV de usuarios</div>
+      <div id="user-csv-filename" style="font-size:11px;color:var(--accent);margin-top:6px"></div>
+    </div>
+    <input type="file" id="user-csv-input" accept=".csv" style="display:none" onchange="parseUserCsv(this)">
+    <div id="user-csv-preview" style="margin-bottom:14px"></div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;color:var(--gray);margin-bottom:8px">O pega los datos directamente (un usuario por línea, campos separados por coma):</div>
+      <textarea class="finput" id="user-bulk-text" rows="6" placeholder="Andrea Molvo, AM, Ventas; Responsable de Proyecto, andrea@molvo.com, +52 55 1234, +52 55 1234, #3a5f8a"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="importBulkUsers()">Importar usuarios</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+let bulkUsersParsed = [];
+
+function parseUserCsv(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('user-csv-filename').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    document.getElementById('user-bulk-text').value = text;
+    previewBulkUsers(text);
+  };
+  reader.readAsText(file);
+}
+
+function previewBulkUsers(text) {
+  const lines = text.split('
+').filter(l => l.trim());
+  // Skip header if first line has 'nombre'
+  const start = lines[0].toLowerCase().includes('nombre') ? 1 : 0;
+  bulkUsersParsed = [];
+  for (let i = start; i < lines.length; i++) {
+    const [nombre='',iniciales='',roles='',email='',telefono='',whatsapp='',color=''] = lines[i].split(',').map(v=>v.trim());
+    if (nombre) bulkUsersParsed.push({nombre,iniciales:iniciales||nombre.substring(0,2).toUpperCase(),roles,email,telefono,whatsapp,color:color||'#3a5f8a'});
+  }
+  const prev = document.getElementById('user-csv-preview');
+  if (!prev) return;
+  prev.innerHTML = bulkUsersParsed.length ? `<div style="font-size:11px;color:var(--green);margin-bottom:6px">✓ ${bulkUsersParsed.length} usuarios detectados</div>` : '';
+}
+
+async function importBulkUsers() {
+  // Try textarea first
+  const text = document.getElementById('user-bulk-text')?.value;
+  if (text && text.trim()) previewBulkUsers(text);
+  if (!bulkUsersParsed.length) { showToast('Sin usuarios para importar', 'error'); return; }
+  closeModal();
+  showToast(`Importando ${bulkUsersParsed.length} usuarios...`, 'info');
+  const now = new Date().toISOString();
+  let count = 0;
+  const COLORS = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
+  for (const u of bulkUsersParsed) {
+    if (DB.usuarios.find(ex => ex.nombre === u.nombre)) continue;
+    const id = genId();
+    const user = {...u, id, color: u.color || COLORS[count % COLORS.length], activo:'true'};
+    const ok = await sheetsAppend('usuarios', SHEET_HEADERS.usuarios.map(h => user[h] || ''));
+    if (ok) { DB.usuarios.push(user); count++; }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  renderConfig();
+  showToast(`${count} usuarios importados ✓`, 'success');
+}
+
+// ----------------------------------------
 function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
