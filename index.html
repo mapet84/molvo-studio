@@ -239,7 +239,8 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 /* MODAL */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(14,14,14,0.4); z-index: 100; align-items: center; justify-content: center; }
 .modal-overlay.open { display: flex; }
-.modal { background: var(--white); border: 0.5px solid var(--border); border-radius: 10px; padding: 24px; width: 420px; max-width: 95vw; max-height: 85vh; overflow-y: auto; }
+.modal { background: var(--white); border: 0.5px solid var(--border); border-radius: 10px; padding: 24px; width: 420px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+.modal.wide { width: 860px; }
 .modal-title { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 400; margin-bottom: 16px; }
 .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
 </style>
@@ -361,9 +362,11 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
   <!-- CONFIG -->
   <div class="panel" id="panel-config">
     <!-- CONFIG TABS -->
-    <div style="display:flex;border-bottom:0.5px solid var(--border);margin:-20px -20px 20px">
+    <div style="display:flex;border-bottom:0.5px solid var(--border);margin:-20px -20px 20px;flex-wrap:wrap">
       <button class="nav-tab active" id="ctab-usuarios" onclick="showConfigTab('usuarios')">Usuarios</button>
-      <button class="nav-tab" id="ctab-plantilla" onclick="showConfigTab('plantilla')">Plantilla de proyecto</button>
+      <button class="nav-tab" id="ctab-plantilla" onclick="showConfigTab('plantilla')">Plantilla</button>
+      <button class="nav-tab" id="ctab-tipos" onclick="showConfigTab('tipos')">Tipos de proyecto</button>
+      <button class="nav-tab" id="ctab-horario" onclick="showConfigTab('horario')">Horario laboral</button>
       <button class="nav-tab" id="ctab-sistema" onclick="showConfigTab('sistema')">Sistema</button>
     </div>
 
@@ -397,6 +400,45 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
         </div>
         <div style="font-size:11px;color:var(--gray);margin-bottom:14px">Define las tareas, roles, duraciones y dependencias que se crean automáticamente en cada nuevo proyecto.</div>
         <div id="template-table"></div>
+      </div>
+    </div>
+
+    <!-- TIPOS DE PROYECTO -->
+    <div id="config-tipos" style="display:none">
+      <div style="display:grid;grid-template-columns:180px 1fr;gap:16px;min-height:500px">
+
+        <!-- TYPE SELECTOR SIDEBAR -->
+        <div style="border:0.5px solid var(--border);border-radius:10px;overflow:hidden">
+          <div style="padding:10px 14px;border-bottom:0.5px solid var(--border);background:var(--cream)">
+            <div style="font-family:'Cormorant Garamond',serif;font-size:15px">Tipos</div>
+          </div>
+          <div id="tipo-sidebar"></div>
+        </div>
+
+        <!-- TIPO EDITOR MAIN -->
+        <div style="border:0.5px solid var(--border);border-radius:10px;overflow:hidden">
+          <div style="padding:10px 16px;border-bottom:0.5px solid var(--border);background:var(--cream);display:flex;align-items:center;justify-content:space-between">
+            <div id="tipo-editor-title" style="font-family:'Cormorant Garamond',serif;font-size:16px"></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="addTipoTask()">+ Tarea</button>
+              <button class="btn-secondary" style="font-size:10px;padding:4px 10px" onclick="addTipoFase()">+ Fase</button>
+              <button class="btn-primary" style="font-size:10px;padding:4px 10px" onclick="saveTipos()">Guardar</button>
+            </div>
+          </div>
+          <div id="tipo-table-container" style="overflow-y:auto;max-height:calc(100vh - 260px)"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HORARIO LABORAL -->
+    <div id="config-horario" style="display:none">
+      <div class="section-card">
+        <div class="section-title">
+          Horario laboral
+          <button class="btn-primary" style="font-size:10px;padding:4px 10px" onclick="saveHorario()">Guardar</button>
+        </div>
+        <div style="font-size:11px;color:var(--gray);margin-bottom:16px">Define el horario de cada día. Las horas determinan la capacidad de cálculo de recursos.</div>
+        <div id="horario-table"></div>
       </div>
     </div>
 
@@ -1039,11 +1081,11 @@ function openResourceAssignmentModal(proyId, mode) {
   document.getElementById('modal-body').innerHTML = `
     <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:400;margin-bottom:3px">${title}</div>
     <div style="font-size:11px;color:var(--gray);margin-bottom:14px">${subtitle}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-height:60vh">
-      <div style="overflow-y:auto;padding-right:4px" id="res-task-list"></div>
-      <div style="overflow-y:auto;padding-right:4px" id="res-user-list"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;height:55vh;min-height:300px">
+      <div style="overflow-y:auto;padding-right:4px;height:100%" id="res-task-list"></div>
+      <div style="overflow-y:auto;padding-right:4px;height:100%" id="res-user-list"></div>
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);background:var(--white);position:sticky;bottom:0">
       <div id="res-assign-count" style="font-size:11px;color:var(--gray)"></div>
       <div style="display:flex;gap:8px">
         <button class="btn-secondary" onclick="closeModal()">Omitir por ahora</button>
@@ -1054,6 +1096,7 @@ function openResourceAssignmentModal(proyId, mode) {
   renderResTaskList(tasks);
   if (currentResTask) renderResUserList(currentResTask, proj);
   updateResCount(tasks);
+  document.getElementById('modal-body').classList.add('wide');
   document.getElementById('modal-overlay').classList.add('open');
 }
 
@@ -1110,16 +1153,25 @@ function renderResUserList(taskId, proj) {
       const isSel = assigned===u.id;
       const isOver = u.pct>=90;
       const bc = isOver?'var(--red)':isRec?'var(--green)':'var(--blue)';
-      return `<div onclick="assignResUser('${taskId}','${u.id}')" style="border:${isSel?'1.5px solid var(--black)':isRec?'1.5px solid var(--green)':'0.5px solid var(--border)'};border-radius:8px;padding:10px 12px;margin-bottom:6px;cursor:pointer;background:${isSel?'var(--cream)':isOver?'#b8444408':'transparent'};position:relative;${!u.match?'opacity:0.55':''}">
+      const taskDetailHtml = u.projs.length
+        ? u.projs.map(p=>`<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--gray);padding:3px 0;border-bottom:0.5px solid var(--border)"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${p.name}</span><span style="flex-shrink:0;margin-left:8px">${p.days}d · <span style="color:${STATUS_COLORS[p.status]||'#888'}">${p.status}</span></span></div>`).join('')
+        : '<div style="font-size:10px;color:var(--green);padding:3px 0">Sin asignaciones en este periodo</div>';
+      return `<div style="border:${isSel?'1.5px solid var(--black)':isRec?'1.5px solid var(--green)':'0.5px solid var(--border)'};border-radius:8px;padding:10px 12px;margin-bottom:6px;background:${isSel?'var(--cream)':isOver?'#a8383810':'transparent'};position:relative;${!u.match?'opacity:0.55':''}">
         ${isRec?'<div style="position:absolute;top:7px;right:8px;background:var(--green);color:#fff;font-size:9px;padding:1px 6px;border-radius:2px;letter-spacing:0.04em">Recomendado</div>':''}
         ${!u.match?'<div style="position:absolute;top:7px;right:8px;font-size:9px;color:var(--gray)">Rol diferente</div>':''}
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+        <div onclick="assignResUser('${taskId}','${u.id}')" style="display:flex;align-items:center;gap:8px;margin-bottom:7px;cursor:pointer">
           <div style="width:30px;height:30px;border-radius:50%;background:${u.color||'#888'}22;color:${u.color||'#888'};display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">${u.iniciales}</div>
           <div style="flex:1"><div style="font-size:12px">${u.nombre}${isSel?' ✓':''}</div><div style="font-size:10px;color:var(--gray)">${u.roles||''}</div></div>
-          <div style="text-align:right"><div style="font-family:'Cormorant Garamond',serif;font-size:18px;color:${bc}">${u.pct}%</div><div style="font-size:9px;color:var(--gray)">${u.used}/${u.total}d</div></div>
+          <div style="text-align:right;cursor:pointer" onclick="event.stopPropagation();toggleUtilDetail('util_${u.id}')">
+            <div style="font-family:'Cormorant Garamond',serif;font-size:18px;color:${bc}">${u.pct}%</div>
+            <div style="font-size:9px;color:var(--gray)">${u.used}/${u.total}d ▾</div>
+          </div>
         </div>
         <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:5px"><div style="height:100%;width:${u.pct}%;background:${bc};border-radius:3px"></div></div>
-        ${u.projs.length ? u.projs.map(p=>`<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--gray);padding:2px 0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">${p.name}</span><span>${p.days}d</span></div>`).join('') : '<div style="font-size:10px;color:var(--green)">Libre en este periodo</div>'}
+        <div id="util_${u.id}" style="display:none;margin-top:6px;padding:6px 0;border-top:0.5px solid var(--border)">
+          ${taskDetailHtml}
+        </div>
+        ${isOver?'<div style="margin-top:6px;font-size:10px;color:var(--red);padding:3px 7px;background:#a8383810;border-radius:3px">⚠ Recurso al '+u.pct+'% de capacidad</div>':''}
       </div>`;
     }).join('');
 }
@@ -1150,8 +1202,14 @@ function updateResCount(tasks) {
   const el = document.getElementById('res-assign-count');
   if (!el) return;
   const done = tasks.filter(t=>pendingAssignments[t.id]||t.usuario_id).length;
-  el.textContent = `${done}/${tasks.length} asignadas`;
+  el.textContent = done+'/'+tasks.length+' asignadas';
   el.style.color = done===tasks.length ? 'var(--green)' : 'var(--gray)';
+}
+
+function toggleUtilDetail(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 async function saveAllAssignments(proyId) {
@@ -1516,14 +1574,272 @@ async function saveClient(editId) {
 // ----------------------------------------
 let templateTasks = null; // null = use STANDARD_TASKS, array = user-edited
 
+// ── DEFAULT WORK SCHEDULE ────────────────────────────────────────────────────
+let workSchedule = JSON.parse(localStorage.getItem('molvo_schedule') || 'null') || {
+  'Lunes':    {active:true,  start:'09:00', end:'18:00'},
+  'Martes':   {active:true,  start:'09:00', end:'18:00'},
+  'Miercoles':{active:true,  start:'09:00', end:'18:00'},
+  'Jueves':   {active:true,  start:'09:00', end:'18:00'},
+  'Viernes':  {active:true,  start:'09:00', end:'18:00'},
+  'Sabado':   {active:false, start:'10:00', end:'14:00'},
+  'Domingo':  {active:false, start:'', end:''},
+};
+
+const PROJECT_TYPES = ['Produccion Audiovisual','Fotografia','Campana','Fashion Film','Content Day','Editorial'];
+
+// Tipo tasks: same 7-phase structure but stored per type
+let tipoTasks = JSON.parse(localStorage.getItem('molvo_tipo_tasks') || 'null') || null;
+
+function getDefaultTipoTasks() {
+  // All types start with same standard tasks but can be customized
+  const base = {};
+  PROJECT_TYPES.forEach(tipo => {
+    base[tipo] = (STANDARD_TASKS || []).map((t,i) => ({
+      ...t, _id: tipo+'_'+i, dependencias: '',
+      roles: [t.rol, '', ''], // up to 3 roles
+      horas: (t.duracion||1) * 8
+    }));
+  });
+  return base;
+}
+
 function showConfigTab(tab) {
-  ['usuarios','plantilla','sistema'].forEach(t => {
-    document.getElementById('config-'+t).style.display = t===tab?'block':'none';
+  ['usuarios','plantilla','tipos','horario','sistema'].forEach(t => {
+    const el = document.getElementById('config-'+t);
+    if (el) el.style.display = t===tab?'block':'none';
     const btn = document.getElementById('ctab-'+t);
     if (btn) btn.classList.toggle('active', t===tab);
   });
   if (tab==='plantilla') renderTemplateTable();
+  if (tab==='tipos') renderTiposConfig();
+  if (tab==='horario') renderHorarioTable();
 }
+
+// ── HORARIO LABORAL ────────────────────────────────────────────────────────────
+function renderHorarioTable() {
+  const el = document.getElementById('horario-table');
+  if (!el) return;
+  const days = ['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado','Domingo'];
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:110px 80px 110px 110px 80px;gap:0;border:0.5px solid var(--border);border-radius:8px;overflow:hidden">
+      <div style="padding:8px 12px;background:var(--cream);font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray);border-bottom:0.5px solid var(--border)">Día</div>
+      <div style="padding:8px 12px;background:var(--cream);font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray);border-bottom:0.5px solid var(--border)">Activo</div>
+      <div style="padding:8px 12px;background:var(--cream);font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray);border-bottom:0.5px solid var(--border)">Entrada</div>
+      <div style="padding:8px 12px;background:var(--cream);font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray);border-bottom:0.5px solid var(--border)">Salida</div>
+      <div style="padding:8px 12px;background:var(--cream);font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--gray);border-bottom:0.5px solid var(--border)">Hrs/día</div>
+      ${days.map((day,i) => {
+        const s = workSchedule[day]||{active:false,start:'',end:''};
+        const hrs = s.active&&s.start&&s.end ? calcHours(s.start,s.end) : 0;
+        const isLast = i===days.length-1;
+        const bg = i%2===0 ? 'var(--white)' : 'var(--cream)';
+        return `
+          <div style="padding:10px 12px;background:${bg};${isLast?'':'border-bottom:0.5px solid var(--border)'};font-size:12px;font-family:'Cormorant Garamond',serif;font-size:14px">${day}</div>
+          <div style="padding:10px 12px;background:${bg};${isLast?'':'border-bottom:0.5px solid var(--border)'};display:flex;align-items:center">
+            <input type="checkbox" id="sch_active_${day}" ${s.active?'checked':''} onchange="updateSchedule('${day}','active',this.checked);renderHorarioTable()" style="width:16px;height:16px;cursor:pointer">
+          </div>
+          <div style="padding:6px 12px;background:${bg};${isLast?'':'border-bottom:0.5px solid var(--border)'}">
+            <input type="time" value="${s.start||''}" id="sch_start_${day}" onchange="updateSchedule('${day}','start',this.value);renderHorarioTable()" style="width:100%;padding:4px 6px;border:0.5px solid var(--border);border-radius:4px;background:var(--white);font-family:'DM Mono',monospace;font-size:11px" ${!s.active?'disabled':''}>
+          </div>
+          <div style="padding:6px 12px;background:${bg};${isLast?'':'border-bottom:0.5px solid var(--border)'}">
+            <input type="time" value="${s.end||''}" id="sch_end_${day}" onchange="updateSchedule('${day}','end',this.value);renderHorarioTable()" style="width:100%;padding:4px 6px;border:0.5px solid var(--border);border-radius:4px;background:var(--white);font-family:'DM Mono',monospace;font-size:11px" ${!s.active?'disabled':''}>
+          </div>
+          <div style="padding:10px 12px;background:${bg};${isLast?'':'border-bottom:0.5px solid var(--border)'};font-size:12px;color:${hrs>0?'var(--green)':'var(--lgray)'}">
+            ${hrs>0?hrs+'h':'—'}
+          </div>`;
+      }).join('')}
+    </div>
+    <div style="margin-top:12px;font-size:11px;color:var(--gray)">
+      Horas semanales: <b style="color:var(--black)">${calcWeeklyHours()}h</b> &nbsp;·&nbsp; 
+      Días hábiles/semana: <b style="color:var(--black)">${Object.values(workSchedule).filter(d=>d.active).length}</b>
+    </div>`;
+}
+
+function calcHours(start, end) {
+  if (!start||!end) return 0;
+  const [sh,sm] = start.split(':').map(Number);
+  const [eh,em] = end.split(':').map(Number);
+  return Math.max(0, (eh*60+em - sh*60-sm)/60);
+}
+
+function calcWeeklyHours() {
+  return Object.values(workSchedule).reduce((sum,d) => sum + (d.active&&d.start&&d.end ? calcHours(d.start,d.end) : 0), 0);
+}
+
+function updateSchedule(day, key, val) {
+  workSchedule[day] = workSchedule[day] || {active:false,start:'',end:''};
+  workSchedule[day][key] = val;
+}
+
+function saveHorario() {
+  localStorage.setItem('molvo_schedule', JSON.stringify(workSchedule));
+  showToast('Horario guardado ✓', 'success');
+}
+
+// ── TIPOS DE PROYECTO ─────────────────────────────────────────────────────────
+let activeTipoTab = PROJECT_TYPES[0];
+
+function renderTiposConfig() {
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const sideEl = document.getElementById('tipo-sidebar');
+  const tableEl = document.getElementById('tipo-table-container');
+  const titleEl = document.getElementById('tipo-editor-title');
+  if (!sideEl||!tableEl) return;
+
+  // Sidebar
+  sideEl.innerHTML = PROJECT_TYPES.map(t => {
+    const taskCount = (tipoTasks[t]||[]).length;
+    const isSel = activeTipoTab===t;
+    return `<div onclick="activeTipoTab='${t}';renderTiposConfig()" style="padding:10px 14px;border-bottom:0.5px solid var(--border);cursor:pointer;background:${isSel?'var(--cream)':'transparent'};border-left:${isSel?'2px solid var(--black)':'2px solid transparent'};transition:all 0.1s">
+      <div style="font-size:12px;${isSel?'':'color:var(--gray)'}">${t}</div>
+      <div style="font-size:10px;color:var(--lgray);margin-top:2px">${taskCount} tareas</div>
+    </div>`;
+  }).join('');
+
+  if (titleEl) titleEl.textContent = activeTipoTab;
+
+  const tasks = tipoTasks[activeTipoTab] || [];
+  const PHASE_COLORS_T = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
+  const PHASE_ORDER2 = ['Brief / Pitch de Cliente','Conceptualizacion / Cotizacion','Presentacion y Aprobacion','Pre-Produccion','Produccion','Post-Produccion','Cierre de Proyecto'];
+
+  // Group by phase maintaining order
+  const phases = [];
+  tasks.forEach(t => { if (!phases.includes(t.fase)) phases.push(t.fase); });
+
+  const allTaskNames = tasks.map(t => t.nombre);
+
+  // Summary header
+  const totalHrs = tasks.reduce((s,t)=>s+(t.horas||8),0);
+  const totalDays = Math.ceil(totalHrs / (calcWeeklyHours()/5||8));
+
+  let html = `<div style="padding:10px 16px;background:var(--sand);border-bottom:0.5px solid var(--border);display:flex;gap:20px;font-size:11px;color:var(--gray)">
+    <span>📋 <b style="color:var(--black)">${tasks.length}</b> tareas</span>
+    <span>⏱ <b style="color:var(--black)">${totalHrs}h</b> totales</span>
+    <span>📅 ~<b style="color:var(--black)">${totalDays}</b> días laborales</span>
+    <span>🗂 <b style="color:var(--black)">${phases.length}</b> fases</span>
+  </div>`;
+
+  // Column headers
+  html += `<div style="display:grid;grid-template-columns:minmax(0,2fr) 95px 95px 95px 55px 70px minmax(0,1fr) 26px;gap:0;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);padding:6px 14px;border-bottom:0.5px solid var(--border);background:var(--cream);position:sticky;top:0">
+    <span>Tarea</span><span>Rol 1</span><span>Rol 2</span><span>Rol 3</span><span>Horas</span><span>Inicio</span><span>Depende de</span><span></span>
+  </div>`;
+
+  phases.forEach((fase, phIdx) => {
+    const phaseTasks = tasks.filter(t=>t.fase===fase);
+    const phColor = PHASE_COLORS_T[phIdx%7];
+    const phHrs = phaseTasks.reduce((s,t)=>s+(t.horas||8),0);
+    // Phase header row
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 14px;background:${phColor}12;border-bottom:0.5px solid var(--border)">
+      <div style="font-family:'Cormorant Garamond',serif;font-size:14px;color:${phColor}">${fase}</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:10px;color:${phColor}">${phaseTasks.length} tareas · ${phHrs}h</span>
+        <button onclick="deleteTipoFase('${fase}')" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:11px;padding:1px 4px" title="Eliminar fase">✕</button>
+      </div>
+    </div>`;
+
+    phaseTasks.forEach(t => {
+      html += `<div style="display:grid;grid-template-columns:minmax(0,2fr) 95px 95px 95px 55px 70px minmax(0,1fr) 26px;gap:0;align-items:center;padding:5px 14px;border-bottom:0.5px solid var(--border);font-size:11px;transition:background 0.1s" onmouseover="this.style.background='var(--sand)'" onmouseout="this.style.background='transparent'">
+        <input value="${t.nombre||''}" onchange="updateTipoTask('${t._id}','nombre',this.value)" style="width:100%;padding:3px 5px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;background:transparent;color:var(--black)" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--white)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'">
+        ${[0,1,2].map(ri => `<select onchange="updateTipoTaskRole('${t._id}',${ri},this.value)" style="width:100%;padding:2px 3px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:9px;background:transparent" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'"><option value="">—</option>${ALL_ROLES.map(r=>`<option${(t.roles&&t.roles[ri]===r)?' selected':''}>${r}</option>`).join('')}</select>`).join('')}
+        <input type="number" min="1" max="999" value="${t.horas||8}" onchange="updateTipoTask('${t._id}','horas',parseInt(this.value)||8)" style="width:100%;padding:3px 4px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;text-align:center;background:transparent" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'">
+        <input type="number" min="0" max="999" value="${t.start_day||0}" onchange="updateTipoTask('${t._id}','start_day',parseInt(this.value)||0)" style="width:100%;padding:3px 4px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;text-align:center;background:transparent" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'">
+        <select onchange="updateTipoTask('${t._id}','dependencias',this.value)" style="width:100%;padding:2px 3px;border:0.5px solid transparent;border-radius:3px;font-family:'DM Mono',monospace;font-size:9px;background:transparent" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'"><option value="">— Ninguna —</option>${allTaskNames.filter(n=>n!==t.nombre).map(n=>`<option${t.dependencias===n?' selected':''}>${n}</option>`).join('')}</select>
+        <button onclick="deleteTipoTask('${t._id}')" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:13px;padding:2px" title="Eliminar tarea">✕</button>
+      </div>`;
+    });
+    // Add task row within phase
+    html += `<div onclick="addTipoTaskToFase('${fase}')" style="display:flex;align-items:center;gap:6px;padding:5px 14px;color:var(--lgray);cursor:pointer;font-size:10px;border-bottom:0.5px solid var(--border)" onmouseover="this.style.color='var(--gray)'" onmouseout="this.style.color='var(--lgray)'">
+      <span style="font-size:13px">+</span><span>Agregar tarea a ${fase}</span>
+    </div>`;
+  });
+
+  if (!tasks.length) {
+    html += `<div style="padding:40px;text-align:center;color:var(--lgray)">
+      <div style="font-size:20px;margin-bottom:8px">◻</div>
+      <div>Sin tareas configuradas para este tipo.</div>
+      <div style="margin-top:10px"><button class="btn-primary" onclick="loadDefaultsForTipo()">Cargar plantilla estándar</button></div>
+    </div>`;
+  }
+
+  tableEl.innerHTML = html;
+}
+
+function updateTipoTask(id, key, val) {
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const t = tipoTasks[activeTipoTab]?.find(t=>t._id===id);
+  if (t) t[key] = val;
+}
+
+function updateTipoTaskRole(id, roleIdx, val) {
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const t = tipoTasks[activeTipoTab]?.find(t=>t._id===id);
+  if (t) { if (!t.roles) t.roles=[t.rol||'','','']; t.roles[roleIdx]=val; }
+}
+
+function deleteTipoTask(id) {
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  tipoTasks[activeTipoTab] = (tipoTasks[activeTipoTab]||[]).filter(t=>t._id!==id);
+  renderTiposConfig();
+}
+
+function addTipoTask() {
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const id = activeTipoTab+'_'+Date.now();
+  const tasks = tipoTasks[activeTipoTab]||[];
+  const lastFase = tasks.length ? tasks[tasks.length-1].fase : 'Brief / Pitch de Cliente';
+  tasks.push({_id:id, fase:lastFase, nombre:'Nueva tarea', roles:['Ventas','',''], horas:8, start_day:0, dependencias:'', campos:[]});
+  tipoTasks[activeTipoTab] = tasks;
+  renderTiposConfig();
+}
+
+function addTipoTaskToFase(fase) {
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const id = activeTipoTab+'_'+Date.now();
+  const tasks = tipoTasks[activeTipoTab]||[];
+  // Insert right after last task of this fase
+  const lastIdx = tasks.reduce((last,t,i)=>t.fase===fase?i:last, -1);
+  const newTask = {_id:id, fase, nombre:'Nueva tarea', roles:['','',''], horas:8, start_day:0, dependencias:'', campos:[]};
+  if (lastIdx>=0) tasks.splice(lastIdx+1,0,newTask); else tasks.push(newTask);
+  tipoTasks[activeTipoTab] = tasks;
+  renderTiposConfig();
+}
+
+function addTipoFase() {
+  const nombre = prompt('Nombre de la nueva fase:');
+  if (!nombre) return;
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const tasks = tipoTasks[activeTipoTab]||[];
+  const id = activeTipoTab+'_f_'+Date.now();
+  tasks.push({_id:id, fase:nombre, nombre:'Primera tarea', roles:['','',''], horas:8, start_day:0, dependencias:'', campos:[]});
+  tipoTasks[activeTipoTab] = tasks;
+  renderTiposConfig();
+}
+
+function deleteTipoFase(fase) {
+  if (!confirm('¿Eliminar la fase "'+fase+'" y todas sus tareas de este tipo?')) return;
+  if (!tipoTasks) return;
+  tipoTasks[activeTipoTab] = (tipoTasks[activeTipoTab]||[]).filter(t=>t.fase!==fase);
+  renderTiposConfig();
+}
+
+function loadDefaultsForTipo() {
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  tipoTasks[activeTipoTab] = getDefaultTipoTasks()[activeTipoTab] || STANDARD_TASKS.map((t,i)=>({
+    ...t, _id:activeTipoTab+'_'+i, dependencias:'', roles:[t.rol,'',''], horas:(t.duracion||1)*8
+  }));
+  renderTiposConfig();
+  showToast('Plantilla estándar cargada ✓','success');
+}
+
+function saveTipos() {
+  localStorage.setItem('molvo_tipo_tasks', JSON.stringify(tipoTasks));
+  showToast('Tipos de proyecto guardados ✓', 'success');
+}
+
+// Load saved tipo tasks
+(function loadTipos() {
+  const s = localStorage.getItem('molvo_tipo_tasks');
+  if (s) { try { tipoTasks = JSON.parse(s); } catch(e){} }
+})();
 
 function renderConfig() {
   const gc = document.getElementById('users-grid');
