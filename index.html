@@ -626,10 +626,23 @@ function loadGis() {
         client_id: CLIENT_ID,
         scope: SCOPES,
         callback: async (resp) => {
-          if (resp.error) { showToast('Auth error: ' + resp.error, 'error'); return; }
+          if (resp.error) {
+            // Show error back on auth screen if molvo login was pending
+            const statusEl = document.getElementById('auth-status');
+            if (statusEl) { statusEl.textContent = 'Error Google: ' + resp.error; statusEl.style.color='#a83838'; }
+            document.getElementById('auth-screen').style.display = 'flex';
+            document.getElementById('loading-overlay').style.display = 'none';
+            showToast('Auth error: ' + resp.error, 'error');
+            return;
+          }
           accessToken = resp.access_token;
           gapi.client.setToken({ access_token: accessToken });
-          await afterSignIn();
+          // If Molvo user already verified, skip Google profile step
+          if (currentMolvoUser) {
+            await afterMolvoSignIn();
+          } else {
+            await afterSignIn();
+          }
         }
       });
       res();
@@ -686,13 +699,20 @@ async function molvoLogin() {
   if (hash !== user.passwordHash) { statusEl.textContent = 'Contraseña incorrecta'; statusEl.style.color='#a83838'; return; }
   currentMolvoUser = user;
   localStorage.setItem('molvo_session', JSON.stringify({username: user.username, ts: Date.now()}));
-  statusEl.textContent = '';
+  statusEl.textContent = 'Conectando con Google...'; statusEl.style.color='#c9a96e';
+  // Load Google APIs first, then request OAuth token
+  await loadGapi();
+  await loadGis();
+  // Request token without consent prompt (silent if already granted)
+  tokenClient.requestAccessToken({ prompt: '' });
+  // afterMolvoSignIn() will be called by the token callback
+}
+
+async function afterMolvoSignIn() {
+  // Called after Google OAuth token is obtained
+  const user = currentMolvoUser;
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('loading-overlay').style.display = 'flex';
-  setLoading('Conectando con Google Sheets...');
-  await loadGapi();
-  await gapi.client.setApiKey ? null : null;
-  // Use stored token or prompt Google
   setLoading('Cargando datos...');
   await initSheetStructure(true);
   await loadAllData();
@@ -703,7 +723,6 @@ async function molvoLogin() {
   renderProjectSelector();
   renderClientList();
   renderConfig();
-  // Show Mi Día by default for regular users
   if (user.rol !== 'admin') {
     setTimeout(()=>{ showPanelById('myday'); document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active')); document.getElementById('nav-myday')?.classList.add('active'); }, 100);
   }
