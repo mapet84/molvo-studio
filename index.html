@@ -1222,75 +1222,102 @@ function fase3Completa(proyId) {
 function openAcdonablesModal(clienteId) {
   const client = DB.clientes.find(c=>c.id===clienteId);
   if (!client) return;
-  let accs = DB.accionables_pago.filter(a=>a.cliente_id===clienteId);
-  // All available task names from catalog
-  const taskNames = (catalogTareas||[]).map(t=>t.nombre).concat(
-    (STANDARD_TASKS||[]).map(t=>t.nombre)
-  ).filter((n,i,a)=>a.indexOf(n)===i).sort();
-
-  function renderAcc() {
-    const el = document.getElementById('acc-list');
-    if (!el) return;
-    const totalPct = accs.reduce((s,a)=>s+parseFloat(a.porcentaje||0),0);
-    el.innerHTML = accs.map((a,i)=>`
-      <div style="display:grid;grid-template-columns:1fr 140px 80px 70px 36px;gap:6px;align-items:center;padding:8px 0;border-bottom:0.5px solid var(--border)">
-        <div>
-          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Nombre del cobro</div>
-          <input value="${a.label||''}" onchange="accs[${i}].label=this.value" style="width:100%;padding:4px 7px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:11px">
-        </div>
-        <div>
-          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Tarea que lo activa</div>
-          <select onchange="accs[${i}].tarea_ref=this.value" style="width:100%;padding:4px 5px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:10px">
-            <option value="">— Seleccionar tarea —</option>
-            ${taskNames.map(n=>`<option${a.tarea_ref===n?' selected':''}>${n}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Porcentaje</div>
-          <div style="display:flex;align-items:center;gap:3px">
-            <input type="number" min="0" max="100" value="${a.porcentaje||''}" onchange="accs[${i}].porcentaje=this.value;renderAccList(accs)" style="width:100%;padding:4px 5px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:11px;text-align:center">
-            <span style="font-size:11px;color:var(--gray)">%</span>
-          </div>
-        </div>
-        <div>
-          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Días pago</div>
-          <div style="padding:4px 7px;background:var(--cream);border-radius:4px;font-size:11px;text-align:center">${client.dias_pago||30}</div>
-        </div>
-        <div style="padding-top:18px">
-          <button onclick="accs.splice(${i},1);renderAccList(accs)" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:16px">✕</button>
-        </div>
-      </div>`).join('')+
-      `<div style="padding:10px 0;display:flex;align-items:center;justify-content:space-between">
-        <div style="font-size:11px;color:${Math.abs(totalPct-100)<0.1?'var(--green)':totalPct>100?'var(--red)':'var(--warn)'}">
-          Total: <b>${Math.round(totalPct*10)/10}%</b> ${Math.abs(totalPct-100)<0.1?' ✓':totalPct>100?' ⚠ supera 100%':' (debe sumar 100%)'}
-        </div>
-        <button onclick="accs.push({id:genId(),cliente_id:'${clienteId}',label:'Nuevo cobro',tarea_ref:'',porcentaje:'0',monto_base:''});renderAccList(accs)" style="font-size:10px;padding:3px 10px;border:0.5px solid var(--border);border-radius:4px;background:none;cursor:pointer;font-family:'DM Mono',monospace">+ Agregar</button>
-      </div>`;
-  }
-
-  // Store accs in closure for modal
-  window._editingAccs = accs;
-  window._editingAccClientId = clienteId;
+  // Deep copy so edits don't touch DB until Save
+  window._accClientId = clienteId;
+  window._accItems = DB.accionables_pago.filter(a=>a.cliente_id===clienteId).map(a=>({...a}));
+  const taskNames = (catalogTareas||[]).map(t=>t.nombre)
+    .concat((STANDARD_TASKS||[]).map(t=>t.nombre))
+    .filter((n,i,a)=>a.indexOf(n)===i).sort();
 
   document.getElementById('modal-body').innerHTML = `
     <div class="modal-title">Accionables de pago — ${client.nombre}</div>
     <div style="font-size:11px;color:var(--gray);margin-bottom:14px">
-      Cada accionable se activa al completar la tarea seleccionada. Se generará un hito de cobro en el proyecto con los días de pago del cliente (${client.dias_pago||30} días · ${client.metodo_pago||'Transferencia'}).
+      Al completar la tarea seleccionada se genera un hito de cobro. Días de pago: <b>${client.dias_pago||30}</b> · ${client.metodo_pago||'Transferencia'}.
     </div>
     <div id="acc-list"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn-primary" onclick="saveAcdonables('${clienteId}')">Guardar</button>
     </div>`;
-
-  // Make renderAccList accessible inside modal
-  window.renderAccList = function(a) { accs=a; window._editingAccs=a; renderAcc(); };
   document.getElementById('modal-overlay').classList.add('open');
-  renderAcc();
+  renderAccModal(taskNames, client);
+}
+
+function renderAccModal(taskNames, client) {
+  const el = document.getElementById('acc-list');
+  if (!el) return;
+  const accs = window._accItems || [];
+  const totalPct = accs.reduce((s,a)=>s+parseFloat(a.porcentaje||0),0);
+  const cid = window._accClientId;
+
+  el.innerHTML = (accs.length ? accs.map((a,i)=>`
+    <div style="background:var(--white);border:0.5px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div>
+          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Nombre del cobro</div>
+          <input value="${(a.label||'').replace(/"/g,'&quot;')}" onchange="window._accItems[${i}].label=this.value"
+            style="width:100%;padding:6px 8px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:12px">
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Tarea que lo activa</div>
+          <select onchange="window._accItems[${i}].tarea_ref=this.value"
+            style="width:100%;padding:6px 8px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:11px">
+            <option value="">— Seleccionar —</option>
+            ${taskNames.map(n=>`<option${a.tarea_ref===n?' selected':''}>${n}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="flex:1">
+          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Porcentaje</div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="number" min="0" max="100" value="${a.porcentaje||0}"
+              onchange="window._accItems[${i}].porcentaje=this.value"
+              style="width:80px;padding:5px 7px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:13px;text-align:center">
+            <span style="font-size:12px;color:var(--gray)">%</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--gray);margin-bottom:3px">Días de pago</div>
+          <div style="padding:5px 12px;background:var(--cream);border-radius:4px;font-size:13px;color:var(--gray)">${client.dias_pago||30}</div>
+        </div>
+        <div style="padding-top:18px">
+          <button onclick="deleteAccItem(${i})"
+            style="padding:5px 10px;border:0.5px solid var(--red);border-radius:4px;background:none;cursor:pointer;color:var(--red);font-size:13px;font-family:'DM Mono',monospace">✕</button>
+        </div>
+      </div>
+    </div>`).join('') : '<div style="font-size:11px;color:var(--lgray);padding:12px 0">Sin accionables. Agrega uno.</div>') +
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:0.5px solid var(--border);margin-top:4px">
+      <div style="font-size:12px;color:${Math.abs(totalPct-100)<0.1?'var(--green)':totalPct>100?'var(--red)':'var(--warn)'}">
+        Total: <b>${Math.round(totalPct*10)/10}%</b>${Math.abs(totalPct-100)<0.1?' ✓':totalPct>100?' — supera 100%':' — debe sumar 100%'}
+      </div>
+      <button onclick="addAccItem('${cid}')"
+        style="padding:5px 14px;border:0.5px solid var(--border);border-radius:4px;background:none;cursor:pointer;font-family:'DM Mono',monospace;font-size:11px">+ Agregar</button>
+    </div>`;
+}
+
+function deleteAccItem(idx) {
+  if (!window._accItems) return;
+  window._accItems.splice(idx,1);
+  const client = DB.clientes.find(c=>c.id===window._accClientId);
+  const taskNames = (catalogTareas||[]).map(t=>t.nombre)
+    .concat((STANDARD_TASKS||[]).map(t=>t.nombre))
+    .filter((n,i,a)=>a.indexOf(n)===i).sort();
+  renderAccModal(taskNames, client);
+}
+
+function addAccItem(clienteId) {
+  if (!window._accItems) window._accItems=[];
+  window._accItems.push({id:genId(),cliente_id:clienteId,label:'Nuevo cobro',tarea_ref:'',porcentaje:'0',monto_base:''});
+  const client = DB.clientes.find(c=>c.id===clienteId);
+  const taskNames = (catalogTareas||[]).map(t=>t.nombre)
+    .concat((STANDARD_TASKS||[]).map(t=>t.nombre))
+    .filter((n,i,a)=>a.indexOf(n)===i).sort();
+  renderAccModal(taskNames, client);
 }
 
 async function saveAcdonables(clienteId) {
-  const newAccs = window._editingAccs || [];
+  const newAccs = window._accItems || [];
   const client = DB.clientes.find(c=>c.id===clienteId);
 
   // Remove old accionables from sheet
