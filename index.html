@@ -3521,25 +3521,27 @@ function confirmDeleteProject() {
   deleteProject(proj.id);
 }
 
+async function findRowsByIds(sheet, ids) {
+  // Fetch current sheet data fresh to get accurate row positions
+  const rows = await sheetsGet(sheet + '!A2:A');
+  const rowNums = [];
+  ids.forEach(id => {
+    const idx = rows.findIndex(r => r[0] === id);
+    if (idx >= 0) rowNums.push(idx + 2); // +2: header + 1-indexed
+  });
+  return rowNums;
+}
+
 async function deleteProject(projId) {
   showToast('Eliminando proyecto...', 'info');
   const tasks = DB.tareas.filter(t => t.proyecto_id === projId);
+  const taskIds = tasks.map(t => t.id);
+  const fieldIds = DB.campos_tarea.filter(f => taskIds.includes(f.tarea_id)).map(f => f.id);
 
-  // Collect all row numbers before modifying DB
-  const fieldRows = {};
-  const taskRows = {};
-  tasks.forEach(t => {
-    taskRows[t.id] = getRowNum('tareas', t.id);
-    DB.campos_tarea.filter(c => c.tarea_id === t.id).forEach(f => {
-      fieldRows[f.id] = getRowNum('campos_tarea', f.id);
-    });
-  });
-  const projRow = getRowNum('proyectos', projId);
-
-  // Remove from local DB first so UI updates immediately
+  // Update UI immediately
   DB.proyectos = DB.proyectos.filter(p => p.id !== projId);
   DB.tareas = DB.tareas.filter(t => t.proyecto_id !== projId);
-  DB.campos_tarea = DB.campos_tarea.filter(c => !tasks.find(t => t.id === c.tarea_id));
+  DB.campos_tarea = DB.campos_tarea.filter(f => !taskIds.includes(f.tarea_id));
   activeProjectId = null;
   document.getElementById('btn-delete-proj').style.display = 'none';
   document.getElementById('detail-wrap').style.display = 'none';
@@ -3548,15 +3550,23 @@ async function deleteProject(projId) {
   renderProjectSelector();
   renderOverview();
 
-  // Delete from Sheet using real row deletion (batch per sheet)
-  const fieldRowNums = Object.values(fieldRows).filter(r=>r>0);
-  const taskRowNums = Object.values(taskRows).filter(r=>r>0);
-
-  if (fieldRowNums.length) await sheetsDeleteRowsBatch('campos_tarea', fieldRowNums);
-  if (taskRowNums.length) await sheetsDeleteRowsBatch('tareas', taskRowNums);
-  if (projRow > 0) await sheetsDeleteRow('proyectos', projRow);
-
-  showToast('Proyecto eliminado ✓', 'success');
+  // Fetch fresh row numbers from Sheet (not stale DB indices)
+  showToast('Borrando del Sheet...', 'info');
+  try {
+    if (fieldIds.length) {
+      const fieldRowNums = await findRowsByIds('campos_tarea', fieldIds);
+      if (fieldRowNums.length) await sheetsDeleteRowsBatch('campos_tarea', fieldRowNums);
+    }
+    if (taskIds.length) {
+      const taskRowNums = await findRowsByIds('tareas', taskIds);
+      if (taskRowNums.length) await sheetsDeleteRowsBatch('tareas', taskRowNums);
+    }
+    const projRowNums = await findRowsByIds('proyectos', [projId]);
+    if (projRowNums.length) await sheetsDeleteRowsBatch('proyectos', projRowNums);
+    showToast('Proyecto eliminado ✓', 'success');
+  } catch(e) {
+    showToast('Error al borrar del Sheet: ' + (e.message||e), 'error');
+  }
 }
 
 // ----------------------------------------
