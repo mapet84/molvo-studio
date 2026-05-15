@@ -1188,6 +1188,8 @@ async function loadAllData() {
 async function refreshAllData() {
   showToast('Actualizando datos...', 'info');
   setSyncing(true);
+  // Hard reset before reload to prevent duplication
+  Object.keys(SHEET_HEADERS).forEach(s => { DB[s] = []; });
   await loadAllData();
   setSyncing(false);
   renderOverview();
