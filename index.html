@@ -3283,42 +3283,63 @@ const SAMPLE_CLIENTS = [
 ];
 
 async function seedSampleData() {
-  if (!confirm('Esto cargará 14 usuarios y 20 clientes de ejemplo al Sheet. ¿Continuar?')) return;
-  showToast('Cargando datos de ejemplo...', 'info');
+  if (!confirm('Esto cargará 14 empleados y 20 clientes de ejemplo. Si ya existen se omitirán. ¿Continuar?')) return;
   const now = new Date().toISOString();
-  // Seed users
-  for (const u of SAMPLE_USERS) {
-    if (DB.usuarios.find(ex => ex.nombre === u.nombre)) continue;
+
+  // ── Empleados ────────────────────────────────────────────────────────────────
+  showToast('Guardando empleados (1/3)...', 'info');
+  const newUsers = SAMPLE_USERS.filter(u => !DB.usuarios.find(ex=>ex.nombre===u.nombre));
+  const userRows = newUsers.map(u => {
     const id = genId();
     const user = {...u, id, activo:'true'};
-    await sheetsAppend('usuarios', SHEET_HEADERS.usuarios.map(h=>user[h]||''));
     DB.usuarios.push(user);
-    await new Promise(r=>setTimeout(r,120));
-  }
-  // Seed clients + accionables
-  for (const c of SAMPLE_CLIENTS) {
-    if (DB.clientes.find(ex => ex.nombre === c.nombre)) continue;
-    const id = genId();
-    const client = {...c, id, creado_en:now};
-    await sheetsAppend('clientes', SHEET_HEADERS.clientes.map(h=>client[h]||''));
-    DB.clientes.push(client);
-    // Default accionables
-    const acs = [
-      {id:genId(),cliente_id:id,label:"Anticipo firma contrato",porcentaje:"40",tarea_ref:"Firmar contrato"},
-      {id:genId(),cliente_id:id,label:"Entrega primer corte",porcentaje:"30",tarea_ref:"Realizar 1er corte de edicion"},
-      {id:genId(),cliente_id:id,label:"Aprobacion final",porcentaje:"30",tarea_ref:"Aprobacion final del cliente"},
-    ];
-    for (const a of acs) {
-      await sheetsAppend('accionables_pago', SHEET_HEADERS.accionables_pago.map(h=>a[h]||''));
-      DB.accionables_pago.push(a);
-      await new Promise(r=>setTimeout(r,80));
+    return SHEET_HEADERS.usuarios.map(h=>user[h]||'');
+  });
+  if (userRows.length) {
+    // batch in chunks of 10 to avoid quota
+    for (let i=0;i<userRows.length;i+=10) {
+      await sheetsBatchAppend('usuarios', userRows.slice(i,i+10));
+      await new Promise(r=>setTimeout(r,300));
     }
-    await new Promise(r=>setTimeout(r,120));
   }
+
+  // ── Auto-create system users for new employees ────────────────────────────
+  for (const u of DB.usuarios) {
+    const uname = u.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+    await createMolvoUser(uname, u.nombre, 'usuario', u.id, '9876Molvo');
+  }
+
+  // ── Clientes ─────────────────────────────────────────────────────────────────
+  showToast('Guardando clientes (2/3)...', 'info');
+  const newClients = SAMPLE_CLIENTS.filter(cl => !DB.clientes.find(ex=>ex.nombre===cl.nombre));
+  for (const cl of newClients) {
+    const id = genId();
+    const client = {...cl, id, creado_en:now};
+    const ok = await sheetsAppend('clientes', SHEET_HEADERS.clientes.map(h=>client[h]||''));
+    if (!ok) { showToast('Error al guardar cliente '+cl.nombre, 'error'); continue; }
+    DB.clientes.push(client);
+    await new Promise(r=>setTimeout(r,200));
+  }
+
+  // ── Accionables de pago ───────────────────────────────────────────────────
+  showToast('Guardando accionables (3/3)...', 'info');
+  for (const client of DB.clientes) {
+    if (DB.accionables_pago.find(a=>a.cliente_id===client.id)) continue;
+    const acs = [
+      {id:genId(),cliente_id:client.id,label:'Anticipo — firma contrato',porcentaje:'40',tarea_ref:'Firmar contrato',monto_base:''},
+      {id:genId(),cliente_id:client.id,label:'Entrega primer corte',porcentaje:'30',tarea_ref:'Realizar 1er corte de edici\u00f3n',monto_base:''},
+      {id:genId(),cliente_id:client.id,label:'Aprobaci\u00f3n final',porcentaje:'30',tarea_ref:'Aprobaci\u00f3n final del cliente',monto_base:''},
+    ];
+    const acRows = acs.map(a => SHEET_HEADERS.accionables_pago.map(h=>a[h]||''));
+    await sheetsBatchAppend('accionables_pago', acRows);
+    acs.forEach(a=>DB.accionables_pago.push(a));
+    await new Promise(r=>setTimeout(r,200));
+  }
+
   renderConfig();
   renderClientList();
   renderOverview();
-  showToast('Datos de ejemplo cargados ✓', 'success');
+  showToast(`✓ ${newUsers.length} empleados y ${newClients.length} clientes cargados`, 'success');
 }
 
 // ----------------------------------------
