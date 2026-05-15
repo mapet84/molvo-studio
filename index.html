@@ -3183,7 +3183,7 @@ function renderCatalogEditor() {
           <select class="fselect" id="ce-rol-molvo">${ALL_ROLES.map(r=>`<option${t.rol_molvo===r?' selected':''}>${r}</option>`).join('')}</select></div>
         <div class="form-group"><label class="flabel">Rol cliente responsable</label>
           <select class="fselect" id="ce-rol-cliente"><option value="">— No aplica —</option>${ROLES_CLIENTE.map(r=>`<option${t.rol_cliente===r?' selected':''}>${r}</option>`).join('')}</select></div>
-        <div class="form-group"><label class="flabel">Duración (días)</label>
+        <div class="form-group"><label class="flabel">Duración (horas)</label>
           <input type="number" class="finput" id="ce-duracion" value="${t.duracion_dias}" min="1" max="999"></div>
         <div class="form-group"><label class="flabel">Descripción / Instrucciones</label>
           <input class="finput" id="ce-desc" value="${t.descripcion||''}" placeholder="Instrucciones para el responsable"></div>
@@ -3199,10 +3199,13 @@ function renderCatalogEditor() {
           <div style="width:28px;height:28px;border-radius:5px;background:var(--cream);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">${TIPO_ICONS[f.tipo]||'?'}</div>
           <div style="flex:1">
             <div style="font-size:12px">${f.label}</div>
-            <div style="font-size:10px;color:var(--gray);margin-top:2px">${TIPO_LABELS[f.tipo]||f.tipo} · ${f.requerido?'<span style="color:var(--red)">Requerido</span>':'Opcional'}</div>
+            <div style="font-size:10px;color:var(--gray);margin-top:2px">${TIPO_LABELS[f.tipo]||f.tipo} · ${f.requerido==='true'||f.requerido===true?'<span style="color:var(--red)">Requerido</span>':'Opcional'}</div>
             ${f.tipo==='opcion_multiple'&&f.opciones?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">${f.opciones.split('|').map(o=>`<span style="font-size:10px;padding:2px 7px;border:0.5px solid var(--border);border-radius:3px">${o}</span>`).join('')}</div>`:''}
           </div>
-          <button onclick="deleteCatalogField('${t.id}',${fi})" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:14px;padding:2px;flex-shrink:0">✕</button>
+          <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+            <button onclick="openEditCatalogFieldModal('${t.id}',${fi})" style="border:0.5px solid var(--border);background:none;cursor:pointer;color:var(--gray);font-size:10px;padding:2px 7px;border-radius:3px;font-family:'DM Mono',monospace">✎</button>
+            <button onclick="deleteCatalogField('${t.id}',${fi})" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:14px;padding:2px">✕</button>
+          </div>
         </div>`).join('')}
       </div>` : `<div style="font-size:11px;color:var(--lgray);padding:12px 0">Sin campos configurados. Agrega preguntas o adjuntos.</div>`}
     </div>`;
@@ -3237,6 +3240,66 @@ function deleteCatalogField(taskId, fieldIdx) {
   if (t) { t.campos.splice(fieldIdx,1); saveCatalog(); renderCatalogEditor(); }
 }
 
+function openEditCatalogFieldModal(taskId, fieldIdx) {
+  const t = catalogTareas.find(t=>t.id===taskId);
+  if (!t) return;
+  const f = t.campos[fieldIdx];
+  if (!f) return;
+  const opts = f.opciones ? f.opciones.split('|') : [];
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Editar campo</div>
+    <div class="form-grid">
+      <div class="form-group full"><label class="flabel">Etiqueta / Pregunta</label>
+        <input class="finput" id="ef-label" value="${f.label||''}"></div>
+      <div class="form-group"><label class="flabel">Tipo de campo</label>
+        <select class="fselect" id="ef-tipo" onchange="toggleEfOpciones(this.value)">
+          <option value="texto_corto"${f.tipo==='texto_corto'?' selected':''}>Texto corto</option>
+          <option value="texto_largo"${f.tipo==='texto_largo'?' selected':''}>Respuesta larga</option>
+          <option value="opcion_multiple"${f.tipo==='opcion_multiple'?' selected':''}>Opción múltiple</option>
+          <option value="adjunto"${f.tipo==='adjunto'?' selected':''}>Adjunto de documento</option>
+        </select></div>
+      <div class="form-group"><label class="flabel">¿Obligatorio?</label>
+        <select class="fselect" id="ef-req">
+          <option value="true"${(f.requerido==='true'||f.requerido===true)?' selected':''}>Sí</option>
+          <option value="false"${(f.requerido==='false'||f.requerido===false)?' selected':''}>No</option>
+        </select></div>
+    </div>
+    <div id="ef-opciones-section" style="display:${f.tipo==='opcion_multiple'?'block':'none'};margin-top:10px">
+      <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Opciones (máx 5)</div>
+      ${[0,1,2,3,4].map(i=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:10px;color:var(--gray);width:14px">${i+1}</span><input class="finput" id="ef-opt${i}" value="${opts[i]||''}" placeholder="Opción ${i+1}" style="flex:1"></div>`).join('')}
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveEditCatalogField('${taskId}',${fieldIdx})">Guardar</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function toggleEfOpciones(tipo) {
+  const el = document.getElementById('ef-opciones-section');
+  if (el) el.style.display = tipo==='opcion_multiple'?'block':'none';
+}
+
+function saveEditCatalogField(taskId, fieldIdx) {
+  const t = catalogTareas.find(t=>t.id===taskId);
+  if (!t||!t.campos[fieldIdx]) return;
+  const label = document.getElementById('ef-label').value.trim();
+  if (!label) { showToast('La etiqueta es obligatoria','error'); return; }
+  const tipo = document.getElementById('ef-tipo').value;
+  const req = document.getElementById('ef-req').value;
+  let opciones = t.campos[fieldIdx].opciones||'';
+  if (tipo==='opcion_multiple') {
+    const opts = [0,1,2,3,4].map(i=>document.getElementById('ef-opt'+i).value.trim()).filter(Boolean);
+    if (opts.length<2) { showToast('Agrega al menos 2 opciones','error'); return; }
+    opciones = opts.join('|');
+  } else { opciones = ''; }
+  t.campos[fieldIdx] = {...t.campos[fieldIdx], label, tipo, requerido:req, opciones};
+  saveCatalog();
+  closeModal();
+  renderCatalogEditor();
+  showToast('Campo actualizado ✓','success');
+}
+
 function openNewCatalogTaskModal() {
   document.getElementById('modal-body').innerHTML = `
     <div class="modal-title">Nueva tarea en catálogo</div>
@@ -3248,7 +3311,7 @@ function openNewCatalogTaskModal() {
         <select class="fselect" id="nc-rol">${ALL_ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
       <div class="form-group"><label class="flabel">Rol cliente</label>
         <select class="fselect" id="nc-rolc"><option value="">— No aplica —</option>${ROLES_CLIENTE.map(r=>`<option>${r}</option>`).join('')}</select></div>
-      <div class="form-group"><label class="flabel">Duración (días)</label><input type="number" class="finput" id="nc-dur" value="1" min="1"></div>
+      <div class="form-group"><label class="flabel">Duración (horas)</label><input type="number" class="finput" id="nc-dur" value="8" min="1"></div>
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
