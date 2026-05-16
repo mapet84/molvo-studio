@@ -2190,18 +2190,45 @@ async function createProject() {
   const ok = await sheetsAppend('proyectos', projValues);
   if (!ok) return;
   DB.proyectos.push(proj);
-  // Build all tasks and fields in memory, then batch-write to Sheet
-  const activeTasks = templateTasks || STANDARD_TASKS;
+  // Build all tasks and fields in memory, then batch-write to Sheet.
+  // Tasks come ONLY from the template defined for this project's tipo
+  // (phase assignment lives on the project type now, not the catalog).
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const tipo = proj.tipo;
+  let activeTasks;
+  if (tipoTasks[tipo] && tipoTasks[tipo].length) {
+    activeTasks = tipoTasks[tipo];
+  } else if (templateTasks) {
+    activeTasks = templateTasks;
+  } else {
+    activeTasks = STANDARD_TASKS;
+  }
+  if (!activeTasks || !activeTasks.length) {
+    showToast('El tipo "'+(tipo||'—')+'" no tiene tareas configuradas. Configúralo en Tipos de proyecto.', 'error');
+    return;
+  }
+
   const taskRows = [];
   const fieldRows = [];
   for (const tpl of activeTasks) {
     const taskId = genId();
-    const task = {id:taskId, proyecto_id:id, fase:tpl.fase, nombre:tpl.nombre, rol:tpl.rol, usuario_id:'', start_day:String(tpl.start_day), duracion:String(tpl.duracion), done:'false', creado_en:now};
+    // Tipo tasks store roles[]/horas; standard tasks store rol/duracion. Normalize both.
+    const rol = tpl.rol || (Array.isArray(tpl.roles) ? tpl.roles.filter(Boolean)[0] : '') || '';
+    const dur = (tpl.horas != null ? tpl.horas : (tpl.duracion != null ? tpl.duracion : 8));
+    const task = {id:taskId, proyecto_id:id, fase:tpl.fase||'', nombre:tpl.nombre, rol, usuario_id:'', start_day:String(tpl.start_day||0), duracion:String(dur), done:'false', creado_en:now};
     taskRows.push(SHEET_HEADERS.tareas.map(h => task[h] || ''));
     DB.tareas.push(task);
-    for (const campo of (tpl.campos||[])) {
+    // Fields: use the task's own campos, or fall back to the catalog
+    // definition (matched by name) so fields stay managed in the catalog.
+    let campos = (tpl.campos && tpl.campos.length) ? tpl.campos : null;
+    if (!campos) {
+      const catTask = (catalogTareas||[]).find(ct => ct.nombre === tpl.nombre);
+      campos = catTask ? (catTask.campos||[]) : [];
+    }
+    for (const campo of campos) {
       const fid = genId();
-      const field = {id:fid, tarea_id:taskId, clave:campo.label.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''), label:campo.label, tipo:campo.tipo, requerido:campo.req?'true':'false', valor:'', actualizado_en:now};
+      const requerido = (campo.req===true || campo.req==='true' || campo.requerido===true || campo.requerido==='true') ? 'true' : 'false';
+      const field = {id:fid, tarea_id:taskId, clave:(campo.label||'').toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''), label:campo.label, tipo:campo.tipo, requerido, valor:'', actualizado_en:now, opciones:campo.opciones||''};
       fieldRows.push(SHEET_HEADERS.campos_tarea.map(h => field[h] || ''));
       DB.campos_tarea.push(field);
     }
@@ -3819,19 +3846,10 @@ function saveCatalog() {
 function renderCatalogList() {
   const el = document.getElementById('catalog-task-list');
   if (!el) return;
-  const phases = [...new Set(catalogTareas.map(t=>t.fase))];
-  const PCOLS = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
-  el.innerHTML = phases.map((fase,pi) => {
-    const tasks = catalogTareas.filter(t=>t.fase===fase);
-    const col = PCOLS[pi%7];
-    return `<div style="border-bottom:0.5px solid var(--border)">
-      <div style="padding:6px 12px;font-family:'Cormorant Garamond',serif;font-size:12px;color:${col};background:${col}10;border-bottom:0.5px solid var(--border)">${fase}</div>
-      ${tasks.map(t=>`<div onclick="selectCatalogTask('${t.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:0.5px solid var(--border);background:${activeCatalogId===t.id?'var(--cream)':'transparent'};border-left:${activeCatalogId===t.id?'2px solid var(--black)':'2px solid transparent'};transition:all 0.1s">
-        <div style="font-size:11px;${activeCatalogId===t.id?'':'color:var(--gray)'}">${t.nombre}</div>
-        <div style="font-size:9px;color:var(--lgray);margin-top:2px">${t.rol_molvo} · ${t.duracion_dias}d · ${t.campos.length} campos</div>
-      </div>`).join('')}
-    </div>`;
-  }).join('');
+  el.innerHTML = catalogTareas.map(t=>`<div onclick="selectCatalogTask('${t.id}')" style="padding:8px 12px;cursor:pointer;border-bottom:0.5px solid var(--border);background:${activeCatalogId===t.id?'var(--cream)':'transparent'};border-left:${activeCatalogId===t.id?'2px solid var(--black)':'2px solid transparent'};transition:all 0.1s">
+      <div style="font-size:11px;${activeCatalogId===t.id?'':'color:var(--gray)'}">${t.nombre}</div>
+      <div style="font-size:9px;color:var(--lgray);margin-top:2px">${t.rol_molvo} · ${t.duracion_dias}h · ${t.campos.length} campos</div>
+    </div>`).join('') || `<div style="padding:30px;text-align:center;color:var(--lgray);font-size:11px">Sin tareas en el catálogo.</div>`;
 }
 
 function selectCatalogTask(id) {
@@ -3861,8 +3879,6 @@ function renderCatalogEditor() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
         <div class="form-group"><label class="flabel">Nombre de la tarea</label>
           <input class="finput" id="ce-nombre" value="${t.nombre}"></div>
-        <div class="form-group"><label class="flabel">Fase</label>
-          <select class="fselect" id="ce-fase">${['Brief / Pitch de Cliente','Conceptualización / Cotización','Presentación y Aprobación','Pre-Producción','Producción','Post-Producción','Cierre de Proyecto'].map(f=>`<option${t.fase===f?' selected':''}>${f}</option>`).join('')}</select></div>
         <div class="form-group"><label class="flabel">Rol Molvo responsable</label>
           <select class="fselect" id="ce-rol-molvo">${ALL_ROLES.map(r=>`<option${t.rol_molvo===r?' selected':''}>${r}</option>`).join('')}</select></div>
         <div class="form-group"><label class="flabel">Rol cliente responsable</label>
@@ -3909,7 +3925,6 @@ function saveCatalogTask(id) {
   const t = catalogTareas.find(t=>t.id===id);
   if (!t) return;
   t.nombre = document.getElementById('ce-nombre').value.trim()||t.nombre;
-  t.fase = document.getElementById('ce-fase').value;
   t.rol_molvo = document.getElementById('ce-rol-molvo').value;
   t.rol_cliente = document.getElementById('ce-rol-cliente').value;
   t.duracion_dias = parseInt(document.getElementById('ce-duracion').value)||1;
@@ -4001,8 +4016,6 @@ function openNewCatalogTaskModal() {
     <div class="modal-title">Nueva tarea en catálogo</div>
     <div class="form-grid">
       <div class="form-group full"><label class="flabel">Nombre</label><input class="finput" id="nc-nombre" placeholder="Nombre de la tarea"></div>
-      <div class="form-group"><label class="flabel">Fase</label>
-        <select class="fselect" id="nc-fase">${['Brief / Pitch de Cliente','Conceptualización / Cotización','Presentación y Aprobación','Pre-Producción','Producción','Post-Producción','Cierre de Proyecto'].map(f=>`<option>${f}</option>`).join('')}</select></div>
       <div class="form-group"><label class="flabel">Rol Molvo</label>
         <select class="fselect" id="nc-rol">${ALL_ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
       <div class="form-group"><label class="flabel">Rol cliente</label>
@@ -4020,7 +4033,7 @@ function createCatalogTask() {
   const nombre = document.getElementById('nc-nombre').value.trim();
   if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
   const id = 'cat_'+Date.now();
-  catalogTareas.push({id, fase:document.getElementById('nc-fase').value, nombre, rol_molvo:document.getElementById('nc-rol').value, rol_cliente:document.getElementById('nc-rolc').value, duracion_dias:parseInt(document.getElementById('nc-dur').value)||1, descripcion:'', campos:[]});
+  catalogTareas.push({id, fase:'', nombre, rol_molvo:document.getElementById('nc-rol').value, rol_cliente:document.getElementById('nc-rolc').value, duracion_dias:parseInt(document.getElementById('nc-dur').value)||1, descripcion:'', campos:[]});
   saveCatalog();
   closeModal();
   renderCatalogList();
