@@ -2052,7 +2052,7 @@ function openNewProjectModal() {
       </div>
       <div class="form-group"><label class="flabel">Presupuesto</label><input class="finput" id="np-budget" placeholder="$000,000"></div>
       <div class="form-group"><label class="flabel">Tipo</label>
-        <select class="fselect" id="np-type" onchange="calcEstimatedDelivery()"><option>Producción Audiovisual</option><option>Fotografía</option><option>Campaña</option><option>Fashion Film</option><option>Content Day</option><option>Editorial</option></select>
+        <select class="fselect" id="np-type" onchange="calcEstimatedDelivery()">${getProjectTypes().map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
       </div>
       <div class="form-group full"><label class="flabel">Status</label>
         <select class="fselect" id="np-status"><option>Por iniciar</option><option>En progreso</option><option>Atrasado</option><option>En riesgo</option><option>Completado</option></select>
@@ -2557,7 +2557,30 @@ let workSchedule = JSON.parse(localStorage.getItem('molvo_schedule') || 'null') 
   'Domingo':  {active:false, start:'', end:''},
 };
 
-const PROJECT_TYPES = ['Produccion Audiovisual','Fotografia','Campana','Fashion Film','Content Day','Editorial'];
+const DEFAULT_PROJECT_TYPES = ['Produccion Audiovisual','Fotografia','Campana','Fashion Film','Content Day','Editorial'];
+
+// Canonical, user-editable list of project types (persisted to localStorage).
+let PROJECT_TYPES = (function(){
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('molvo_project_types')||'null'); } catch(e){}
+  return (Array.isArray(saved) && saved.length) ? saved.slice() : DEFAULT_PROJECT_TYPES.slice();
+})();
+
+function saveProjectTypes() {
+  localStorage.setItem('molvo_project_types', JSON.stringify(PROJECT_TYPES));
+}
+
+// Single source of truth for EVERY place that lists project types:
+// the persisted list, plus any type that already exists as a task
+// template or is used by an existing project (stable order, deduped).
+function getProjectTypes() {
+  const out = [];
+  const add = v => { if (v && !out.includes(v)) out.push(v); };
+  PROJECT_TYPES.forEach(add);
+  if (tipoTasks) Object.keys(tipoTasks).forEach(add);
+  if (DB && Array.isArray(DB.proyectos)) DB.proyectos.forEach(p => add(p.tipo));
+  return out;
+}
 
 // Tipo tasks: same 7-phase structure but stored per type
 let tipoTasks = JSON.parse(localStorage.getItem('molvo_tipo_tasks') || 'null') || null;
@@ -2565,7 +2588,7 @@ let tipoTasks = JSON.parse(localStorage.getItem('molvo_tipo_tasks') || 'null') |
 function getDefaultTipoTasks() {
   // All types start with same standard tasks but can be customized
   const base = {};
-  PROJECT_TYPES.forEach(tipo => {
+  getProjectTypes().forEach(tipo => {
     base[tipo] = (STANDARD_TASKS || []).map((t,i) => ({
       ...t, _id: tipo+'_'+i, dependencias: '',
       roles: [t.rol, '', ''], // up to 3 roles
@@ -2852,7 +2875,7 @@ function saveHorario() {
 }
 
 // ── TIPOS DE PROYECTO ─────────────────────────────────────────────────────────
-let activeTipoTab = PROJECT_TYPES[0];
+let activeTipoTab = getProjectTypes()[0];
 
 function renderTiposConfig() {
   if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
@@ -2862,7 +2885,7 @@ function renderTiposConfig() {
   if (!sideEl||!tableEl) return;
 
   // Sidebar
-  sideEl.innerHTML = PROJECT_TYPES.map(t => {
+  sideEl.innerHTML = getProjectTypes().map(t => {
     const taskCount = (tipoTasks[t]||[]).length;
     const isSel = activeTipoTab===t;
     return `<div onclick="activeTipoTab='${t}';renderTiposConfig()" style="padding:10px 14px;border-bottom:0.5px solid var(--border);cursor:pointer;background:${isSel?'var(--cream)':'transparent'};border-left:${isSel?'2px solid var(--black)':'2px solid transparent'};transition:all 0.1s">
@@ -3015,7 +3038,7 @@ function loadDefaultsForTipo() {
 
 function openAddTipoModal() {
   if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
-  const existingTypes = Object.keys(tipoTasks).concat(PROJECT_TYPES);
+  const existingTypes = getProjectTypes();
   document.getElementById('modal-body').innerHTML = `
     <div class="modal-title">Nuevo tipo de proyecto</div>
     <div class="form-group" style="margin-bottom:12px">
@@ -3049,6 +3072,7 @@ function createNewTipo() {
     tipoTasks[name] = [];
   }
   if (!PROJECT_TYPES.includes(name)) PROJECT_TYPES.push(name);
+  saveProjectTypes();
   activeTipoTab = name;
   closeModal();
   saveTipos();
@@ -3061,7 +3085,8 @@ function deleteTipo() {
   const idx = PROJECT_TYPES.indexOf(activeTipoTab);
   if (idx>=0) PROJECT_TYPES.splice(idx,1);
   if (tipoTasks) delete tipoTasks[activeTipoTab];
-  activeTipoTab = PROJECT_TYPES[0]||'';
+  saveProjectTypes();
+  activeTipoTab = getProjectTypes()[0]||'';
   saveTipos();
   renderTiposConfig();
   showToast('Tipo eliminado ✓', 'success');
