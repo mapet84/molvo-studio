@@ -2359,17 +2359,25 @@ async function createProject() {
     };
   });
 
-  // If the system estimate beats the client commitment date → persist
-  // straight away. Otherwise, open the calibration modal so the user can
-  // trim hours per task and bring the estimate inside the deadline.
-  if (plan.length && proj.fecha_fin && proj.fecha_inicio) {
-    const sched = computeScheduleFromTasks(proj.fecha_inicio, plan);
-    const [ey, em, ed] = proj.fecha_fin.split('-').map(Number);
-    const clientDate = new Date(ey, em-1, ed);
-    if (sched && sched.estimated > clientDate) {
-      openTaskCalibrationModal(proj, plan);
-      return;
+  // Backward planning: derive fecha_inicio from the deadline + total
+  // hours. If no deadline is set, default the start to today (and the
+  // user can edit later from the gantt). If the computed start lands in
+  // the past, there isn't enough time — open the calibration modal so
+  // the user can trim hours until the start is today or later.
+  const today = todayYMD();
+  if (proj.fecha_fin && plan.length) {
+    const sched = computeStartFromDeadline(proj.fecha_fin, plan);
+    if (sched && sched.start) {
+      proj.fecha_inicio = ymdLocal(sched.start);
+      if (proj.fecha_inicio < today) {
+        openTaskCalibrationModal(proj, plan);
+        return;
+      }
+    } else {
+      proj.fecha_inicio = today;
     }
+  } else {
+    proj.fecha_inicio = proj.fecha_inicio || today;
   }
 
   await persistNewProject(proj, plan);
@@ -2460,7 +2468,7 @@ function openTaskCalibrationModal(proj, plan) {
   document.getElementById('modal-body').innerHTML = `
     <div class="modal-title">Calibración de tareas</div>
     <div style="font-size:11px;color:var(--gray);margin-bottom:14px;line-height:1.5">
-      Con la plantilla actual el proyecto terminaría <b id="cal-est-date" style="color:var(--red)">—</b>, pero el cliente lo necesita para el <b>${clientFmt}</b>. Reduce las horas asignadas a las tareas que puedas comprimir hasta que la fecha estimada quede dentro de la fecha del cliente. Estos ajustes aplican solo a este proyecto; la plantilla del tipo no se modifica.
+      Para entregar el <b>${clientFmt}</b> el proyecto tendría que haber empezado el <b id="cal-est-date" style="color:var(--red)">—</b>. Como esa fecha ya pasó, no hay tiempo suficiente con las horas actuales. Reduce las horas asignadas a las tareas que puedas comprimir hasta que la fecha de inicio sugerida quede hoy o después. Estos ajustes aplican solo a este proyecto; la plantilla del tipo no se modifica.
     </div>
     <div id="cal-summary" style="display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap;font-size:11px;margin-bottom:12px;padding:12px 14px;background:var(--cream);border-radius:6px"></div>
     <div style="max-height:48vh;overflow-y:auto;border:0.5px solid var(--border);border-radius:6px">
@@ -2495,11 +2503,12 @@ function updateCalibHours(idx, val) {
 
 function recomputeCalibSummary() {
   if (!_calibProj || !_calibPlan) return;
-  const sched = computeScheduleFromTasks(_calibProj.fecha_inicio, _calibPlan);
-  const [ey, em, ed] = _calibProj.fecha_fin.split('-').map(Number);
-  const clientDate = new Date(ey, em-1, ed);
-  const ok = sched && sched.estimated <= clientDate;
-  const fmt = sched ? sched.estimated.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}) : '—';
+  const sched = computeStartFromDeadline(_calibProj.fecha_fin, _calibPlan);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const startMid = sched ? new Date(sched.start) : null;
+  if (startMid) startMid.setHours(0,0,0,0);
+  const ok = sched && startMid >= today;
+  const fmt = sched ? sched.start.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}) : '—';
   const dateEl = document.getElementById('cal-est-date');
   if (dateEl) { dateEl.textContent = fmt; dateEl.style.color = ok ? 'var(--green)' : 'var(--red)'; }
   const sumEl = document.getElementById('cal-summary');
@@ -2507,15 +2516,19 @@ function recomputeCalibSummary() {
     const totalOrig = _calibPlan.reduce((s,p)=>s+Number(p.originalHoras||0), 0);
     const totalNew = _calibPlan.reduce((s,p)=>s+Number(p.horas||0), 0);
     const saved = totalOrig - totalNew;
+    const diffDays = startMid ? Math.round((startMid - today)/(1000*60*60*24)) : 0;
+    const statusTxt = ok
+      ? (diffDays===0 ? '✓ Hay que empezar hoy' : `✓ ${diffDays} día${diffDays===1?'':'s'} de margen`)
+      : `⚠ Faltan ${Math.abs(diffDays)} día${Math.abs(diffDays)===1?'':'s'} de tiempo`;
     const cell = (label, val, color) => `<div><div style="color:var(--gray);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:2px">${label}</div><div style="font-family:'Cormorant Garamond',serif;font-size:18px;${color?`color:${color}`:''}">${val}</div></div>`;
     sumEl.innerHTML = `
       ${cell('Horas totales', `${Math.round(totalNew)}h <span style="font-size:11px;color:var(--gray)">de ${Math.round(totalOrig)}h</span>`)}
       ${cell('Horas ahorradas', `${Math.round(saved)}h`, saved>0?'var(--green)':'var(--gray)')}
       ${cell('Días laborales', `${sched ? sched.target : 0}d`)}
       <div style="margin-left:auto;text-align:right">
-        <div style="color:var(--gray);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:2px">Fecha estimada</div>
+        <div style="color:var(--gray);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:2px">Fecha de inicio</div>
         <div style="font-family:'Cormorant Garamond',serif;font-size:18px;color:${ok?'var(--green)':'var(--red)'}">${fmt}</div>
-        <div style="font-size:10px;color:${ok?'var(--green)':'var(--red)'};margin-top:2px">${ok?'✓ Dentro de la fecha del cliente':'⚠ Aún supera la fecha del cliente'}</div>
+        <div style="font-size:10px;color:${ok?'var(--green)':'var(--red)'};margin-top:2px">${statusTxt}</div>
       </div>`;
   }
 }
@@ -2529,6 +2542,12 @@ function resetCalibPlan() {
 async function confirmCalibAndCreate() {
   if (!_calibProj || !_calibPlan) return;
   const proj = _calibProj, plan = _calibPlan;
+  // Recompute start with the final adjusted hours and stamp it on the
+  // project so persisted fecha_inicio reflects the calibration.
+  if (proj.fecha_fin && plan.length) {
+    const sched = computeStartFromDeadline(proj.fecha_fin, plan);
+    if (sched && sched.start) proj.fecha_inicio = ymdLocal(sched.start);
+  }
   _calibProj = null; _calibPlan = null;
   await persistNewProject(proj, plan);
 }
