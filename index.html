@@ -4716,36 +4716,48 @@ async function sendCalendarInvite(taskId) {
   const endDt = endLocal.getFullYear()+'-'+pad(endLocal.getMonth()+1)+'-'+pad(endLocal.getDate())+'T'+pad(endLocal.getHours())+':'+pad(endLocal.getMinutes())+':00';
 
   try {
-    const ready = await ensureCalendarLoaded();
-    if (!ready.ok) {
-      if (/disabled|has not been used|enable it/i.test(ready.message)) {
-        showToast('La API de Google Calendar no está habilitada en tu proyecto de Google Cloud. Habilítala en console.cloud.google.com y recarga.','error');
-      } else {
-        showToast('No se pudo cargar Google Calendar: '+ready.message,'error');
-      }
+    if (!accessToken) {
+      showToast('Sesión expirada. Cierra sesión y vuelve a entrar.','error');
       return;
     }
     const event = {
       summary: title,
-      description: 'Proyecto: '+proj?.nombre+'\nTarea: '+task.nombre,
+      description: 'Proyecto: '+(proj?.nombre||'')+'\nTarea: '+task.nombre,
       start: {dateTime: startDt, timeZone: 'America/Mexico_City'},
       end: {dateTime: endDt, timeZone: 'America/Mexico_City'},
       attendees,
       reminders: {useDefault:true}
     };
-    await gapi.client.calendar.events.insert({calendarId:'primary', resource:event, sendUpdates:'all'});
+    // Call the Calendar REST API directly — no discovery doc dance, and
+    // the failure body comes back as plain JSON we can actually read.
+    const resp = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(event)
+    });
+    if (!resp.ok) {
+      let body = null;
+      try { body = await resp.json(); } catch(_) {}
+      const apiMsg = body?.error?.message || ('HTTP '+resp.status+' '+resp.statusText);
+      const status = body?.error?.status || '';
+      const code = body?.error?.code;
+      console.error('Calendar API error:', resp.status, body);
+      if (code === 401 || resp.status === 401) {
+        showToast('Sesión de Google expirada. Cierra sesión y vuelve a entrar.','error');
+      } else if (status === 'PERMISSION_DENIED' || /ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficient.*scope/i.test(apiMsg)) {
+        showToast('Falta el permiso de Google Calendar en tu sesión. Cierra sesión y vuelve a entrar para autorizarlo.','error');
+      } else if (/has not been used|disabled|enable it/i.test(apiMsg)) {
+        showToast('La API de Google Calendar no está habilitada en tu proyecto de Google Cloud. Ábrela en console.cloud.google.com → APIs → Library, habilítala y vuelve a intentar.','error');
+      } else {
+        showToast('Error creando evento: '+apiMsg,'error');
+      }
+      return;
+    }
     closeModal();
     showToast('Evento creado y enviado a '+attendees.length+' participante(s) ✓','success');
   } catch(e) {
-    const msg = e?.result?.error?.message || e?.message || String(e);
-    const status = e?.result?.error?.status || '';
-    if (status === 'PERMISSION_DENIED' || /insufficient|scope/i.test(msg)) {
-      showToast('Falta el permiso de Google Calendar. Cierra sesión y vuelve a entrar para autorizarlo.','error');
-    } else if (/disabled|has not been used|enable it/i.test(msg)) {
-      showToast('Habilita la API de Google Calendar en tu proyecto de Google Cloud y vuelve a intentar.','error');
-    } else {
-      showToast('Error creando evento: '+msg,'error');
-    }
+    console.error('Calendar fetch failed:', e);
+    showToast('Error de red al crear el evento: '+(e.message||e),'error');
   }
 }
 
