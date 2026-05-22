@@ -362,8 +362,11 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 
   <!-- PROJECTS -->
   <div class="panel" id="panel-projects">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300" id="proj-title">Selecciona un proyecto</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:16px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;min-width:0">
+        <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300" id="proj-title">Selecciona un proyecto</div>
+        <div id="proj-responsable-chip" style="display:none"></div>
+      </div>
       <div style="display:flex;gap:8px">
         <select class="fselect" id="project-selector" onchange="loadProject(this.value)" style="min-width:200px"></select>
         <button class="btn-secondary" onclick="confirmDeleteProject()" id="btn-delete-proj" style="display:none;color:var(--red);border-color:var(--red)">✕ Eliminar</button>
@@ -1354,7 +1357,32 @@ async function loadProject(projId) {
   document.getElementById('btn-delete-proj').style.display = 'inline-flex';
   const proj = DB.proyectos.find(p => p.id === projId);
   document.getElementById('proj-title').textContent = proj ? proj.nombre : '';
+  renderProjectResponsableChip(proj);
   renderProject();
+}
+
+// Renders (or hides) the small responsable chip next to the project
+// title in the gantt header.
+function renderProjectResponsableChip(proj) {
+  const chip = document.getElementById('proj-responsable-chip');
+  if (!chip) return;
+  if (!proj) { chip.style.display = 'none'; chip.innerHTML = ''; return; }
+  const u = proj.responsable_id ? DB.usuarios.find(x => x.id === proj.responsable_id) : null;
+  if (u) {
+    chip.style.display = 'inline-flex';
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:7px;padding:4px 10px 4px 4px;border:0.5px solid var(--border);border-radius:14px;background:var(--white)';
+    chip.innerHTML = `
+      <div style="width:22px;height:22px;border-radius:50%;background:${u.color||'#888'}22;color:${u.color||'#888'};display:flex;align-items:center;justify-content:center;font-size:9px">${u.iniciales}</div>
+      <div style="display:flex;flex-direction:column;line-height:1.15">
+        <div style="font-size:9px;color:var(--gray);letter-spacing:0.05em;text-transform:uppercase">Responsable</div>
+        <div style="font-size:11px">${u.nombre}</div>
+      </div>`;
+  } else {
+    chip.style.display = 'inline-flex';
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:0.5px dashed var(--border);border-radius:14px;background:var(--cream);color:var(--gray);font-size:10px;cursor:pointer';
+    chip.title = 'Edita el proyecto para asignar un responsable';
+    chip.innerHTML = `<span>Sin responsable asignado</span>`;
+  }
 }
 
 function renderProject() {
@@ -1604,16 +1632,19 @@ async function saveAcdonables(clienteId) {
 // ─── BILLING HITO: auto-create cobro task when accionable task completes ──────
 async function createBillingHito(task, proj, billing, client) {
   const now = new Date().toISOString();
-  // Anchor the cobranza on the ACTUAL completion date (now), not on the
-  // planned end date of the triggering task. If a task finishes late or
-  // early, the payment window should track the real-world event.
+  // The cobranza is a milestone — a single point in time at the due
+  // date, not a band spanning the payment window. We compute the due
+  // date from the actual completion date (today) + the client's
+  // payment-terms, then place the hito AT that date with a token
+  // 1-day duration so the gantt renders it as a marker rather than a
+  // wide bar from completion to due.
   const [py, pm, pd] = (proj.fecha_inicio||'2025-01-01').split('-').map(Number);
   const pStart = new Date(py, pm-1, pd);
   const completionDate = new Date(); completionDate.setHours(0,0,0,0);
-  const daysFromStart = Math.max(0, Math.round((completionDate - pStart)/(1000*60*60*24)));
   const dueDate = new Date(completionDate);
   dueDate.setDate(dueDate.getDate() + parseInt(client.dias_pago||30));
   const dueDateStr = dueDate.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
+  const daysFromStartToDue = Math.max(0, Math.round((dueDate - pStart)/(1000*60*60*24)));
 
   // Find finanzas user
   const finanzasUser = DB.usuarios.find(u=>(u.roles||'').toLowerCase().includes('finanzas'));
@@ -1628,9 +1659,10 @@ async function createBillingHito(task, proj, billing, client) {
   const hitoNombre = 'Cobro por ' + billing.label;
   const hitoId = genId();
 
-  // Place hito at the actual completion day (relative to project start),
-  // running for the client's payment-terms window.
-  const hitoStartDay = daysFromStart;
+  // Milestone: start_day = due date offset from project start, with a
+  // one-day token duration so the bar renders as a small marker on the
+  // due date instead of stretching back to the completion date.
+  const hitoStartDay = daysFromStartToDue;
 
   const hito = {
     id: hitoId,
@@ -1640,7 +1672,7 @@ async function createBillingHito(task, proj, billing, client) {
     rol: 'Finanzas',
     usuario_id: finanzasUser ? finanzasUser.id : '',
     start_day: String(hitoStartDay),
-    duracion: String(parseInt(client.dias_pago||30)*8),
+    duracion: '8',
     done: 'false',
     creado_en: now,
     catalogo_id: ''
@@ -2159,10 +2191,26 @@ function openResourceAssignmentModal(proyId, mode) {
     }
   }
 
+  // "Responsable de Proyecto" lives on the project itself (set in the
+  // Nuevo Proyecto form). The modal does NOT ask for it again, but we
+  // seed the project responsable into the role map so saveAllAssignments
+  // still propagates that person to every task that lists Responsable
+  // de Proyecto in its rol list.
+  if (proj.responsable_id) {
+    pendingAssignments[RESPONSABLE_ROLE_NORM] = {
+      display: 'Responsable de Proyecto',
+      userId: proj.responsable_id
+    };
+  }
+
   const title = mode==='early'
     ? 'Asignar responsables del proyecto'
     : 'Proyecto aprobado — Verifica responsables';
-  const subtitle = 'Elige una persona por rol. El sistema aplica la asignación a cada tarea que requiera ese rol. Si una tarea tiene varios roles posibles, gana el rol con mayor prioridad (rol 1).';
+  const responsableUser = proj.responsable_id ? DB.usuarios.find(u => u.id === proj.responsable_id) : null;
+  const responsableNote = responsableUser
+    ? ` <span style="color:var(--accent)">·</span> Responsable de Proyecto: <b style="font-weight:500">${responsableUser.nombre}</b> (configurado al crear el proyecto)`
+    : ` <span style="color:var(--warn)">·</span> Sin Responsable de Proyecto definido — edita el proyecto para asignarlo.`;
+  const subtitle = 'Elige una persona por rol. El sistema aplica la asignación a cada tarea que requiera ese rol. Si una tarea tiene varios roles posibles, gana el rol con mayor prioridad (rol 1).' + responsableNote;
 
   document.getElementById('modal-body').innerHTML = `
     <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:400;margin-bottom:3px">${title}</div>
@@ -2185,6 +2233,11 @@ function openResourceAssignmentModal(proyId, mode) {
 // Aggregate the unique roles needed by a set of tasks. Returns one
 // entry per role with: display name, count of tasks needing it,
 // date window (min start → max end) used to compute utilization.
+// We skip "Responsable de Proyecto" — that role is owned by the
+// project itself (set when the project is created) and is propagated
+// into pendingAssignments by the modal opener, so we don't ask for it
+// again in the role list.
+const RESPONSABLE_ROLE_NORM = 'responsable de proyecto';
 function aggregateProjectRoles(tasks, proj) {
   const [py, pm, pd] = (proj?.fecha_inicio||'2025-01-01').split('-').map(Number);
   const pStart = new Date(py, pm-1, pd);
@@ -2196,6 +2249,7 @@ function aggregateProjectRoles(tasks, proj) {
     const sortKey = parseInt(t.start_day) || 0;
     roles.forEach(r => {
       const norm = normRoleStr(r);
+      if (norm === RESPONSABLE_ROLE_NORM) return; // handled at project level
       if (!map[norm]) map[norm] = { norm, display: r, taskCount: 0, minStart: sd, maxEnd: ed, sortKey };
       map[norm].taskCount++;
       if (sd < map[norm].minStart) map[norm].minStart = sd;
@@ -4237,6 +4291,7 @@ async function deleteProject(projId) {
     document.getElementById('detail-wrap').style.display = 'none';
     document.getElementById('phases-container').innerHTML = '';
     document.getElementById('proj-title').textContent = 'Selecciona un proyecto';
+    renderProjectResponsableChip(null);
     renderProjectSelector();
     renderOverview();
     showToast(`Eliminado ✓ — ${taskRowNums.length} tareas y ${fieldRowNums.length} campos borrados del Sheet`, 'success');
