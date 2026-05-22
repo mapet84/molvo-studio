@@ -560,8 +560,8 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 const CLIENT_ID = '893121171958-p34ap7ll9re2etcd90la4vgmu61r39b4.apps.googleusercontent.com';
 const API_KEY   = 'AIzaSyBNjGDDr-pao-yDcOuzFsb6Qi-STi65Rvc';
 const SHEET_ID  = '1KraykEXxIz99xymH9KSoka5MjodhqA0LMh8cklwU7tY';
-const SCOPES    = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
-const DISCOVERY = ['https://sheets.googleapis.com/$discovery/rest?version=v4'];
+const SCOPES    = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events';
+const DISCOVERY = ['https://sheets.googleapis.com/$discovery/rest?version=v4', 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'];
 
 const PHASE_COLORS = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
 const STATUS_COLORS = {'En progreso':'#3a5f8a','Brief':'#5a7a4a','Cotizacion':'#8a5a3a','En aprobacion':'#6a3a8a','Pre-Produccion':'#3a5f8a','Produccion':'#2a4f7a','Post-Produccion':'#3a7a7a','Atrasado':'#b84444','En riesgo':'#c4892a','Completado':'#3d7a5a','Por iniciar':'#8a8680'};
@@ -2128,38 +2128,47 @@ function calcEstimatedDelivery() {
   // Calculate total working days needed
   const hpd = hoursPerDay();
   let totalHours = tasks.reduce((s,t) => s + (parseInt(t.horas||0)||parseInt(t.duracion||0)*hpd||8), 0);
-  // Convert to calendar days (accounting for weekend skip)
-  let calDays = 0;
-  let workDays = 0;
   const target = Math.ceil(totalHours / hpd);
-  const d = new Date(startVal);
-  // Walk forward counting only working days (respects holidays and schedule)
   const dayNames = ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
-  while (workDays < target) {
-    d.setDate(d.getDate()+1);
-    calDays++;
-    const dateStr = d.toISOString().split('T')[0];
-    const dayName = dayNames[d.getDay()];
-    const sch = workSchedule[dayName];
+
+  // Parse YYYY-MM-DD as a LOCAL date so day-of-week and the YYYY-MM-DD
+  // we feed to isHoliday() never disagree across timezones.
+  const [sy, sm, sd_] = startVal.split('-').map(Number);
+  const d = new Date(sy, sm-1, sd_);
+  const pad = n => String(n).padStart(2,'0');
+  const ymd = dt => dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());
+
+  let workDays = 0;
+  let calDays = 0;
+  // Walk forward starting AT startVal (inclusive). The start date itself
+  // counts as the first working day if it is one — the previous version
+  // skipped it, which made every estimate land one workday too late.
+  while (true) {
+    const dateStr = ymd(d);
+    const sch = workSchedule[dayNames[d.getDay()]];
     if (sch && sch.active) {
       const hol = typeof isHoliday === 'function' ? isHoliday(dateStr) : null;
       if (!hol || hol.tipo !== 'festivo') workDays++;
-      if (hol && hol.tipo === 'medio') workDays -= 0.5; // half day = 0.5 work days
+      if (hol && hol.tipo === 'medio') workDays -= 0.5;
     }
+    if (workDays >= target) break;
+    d.setDate(d.getDate()+1);
+    calDays++;
     if (calDays > 730) break; // safety
   }
 
-  const estimated = new Date(startVal);
-  estimated.setDate(estimated.getDate() + calDays);
+  const estimated = new Date(d);
+  const startDate = new Date(sy, sm-1, sd_);
   const fmt = estimated.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
-  const diff = Math.round((estimated - new Date(startVal))/(1000*60*60*24));
+  const diff = Math.round((estimated - startDate)/(1000*60*60*24));
 
   outEl.innerHTML = `<b style="color:var(--black)">${fmt}</b> <span style="color:var(--gray);font-size:10px">(~${diff} días calendario · ${target} días laborales · ${Math.round(totalHours)}h totales)</span>`;
 
   // Also check against client delivery date
   const endEl = document.getElementById('np-end');
   if (endEl && endEl.value) {
-    const clientDate = new Date(endEl.value);
+    const [ey, em, ed] = endEl.value.split('-').map(Number);
+    const clientDate = new Date(ey, em-1, ed);
     if (estimated > clientDate) {
       outEl.innerHTML += `<div style="margin-top:4px;font-size:10px;color:var(--red)">⚠ La estimación supera la fecha comprometida con el cliente en ${Math.round((estimated-clientDate)/(1000*60*60*24))} días.</div>`;
     } else {
@@ -4451,11 +4460,18 @@ async function sendCalendarInvite(taskId) {
   ctContacts.forEach(ct=>{ if(!attendees.find(a=>a.email===ct.email)) attendees.push({email:ct.email}); });
 
   const startDt = date+'T'+time+':00';
-  const endDate = new Date(date+'T'+time);
-  endDate.setMinutes(endDate.getMinutes()+dur);
-  const endDt = endDate.toISOString().slice(0,16)+':00';
+  // Build end time in LOCAL time (matching timeZone tag). toISOString()
+  // would convert to UTC and shift the event by the local UTC offset.
+  const startLocal = new Date(date+'T'+time+':00');
+  const endLocal = new Date(startLocal.getTime() + dur*60*1000);
+  const pad = n => String(n).padStart(2,'0');
+  const endDt = endLocal.getFullYear()+'-'+pad(endLocal.getMonth()+1)+'-'+pad(endLocal.getDate())+'T'+pad(endLocal.getHours())+':'+pad(endLocal.getMinutes())+':00';
 
   try {
+    if (!gapi.client.calendar) {
+      showToast('Google Calendar aún no está cargado. Cierra sesión y vuelve a entrar para habilitarlo.','error');
+      return;
+    }
     const event = {
       summary: title,
       description: 'Proyecto: '+proj?.nombre+'\nTarea: '+task.nombre,
@@ -4468,7 +4484,12 @@ async function sendCalendarInvite(taskId) {
     closeModal();
     showToast('Evento creado y enviado a '+attendees.length+' participante(s) ✓','success');
   } catch(e) {
-    showToast('Error creando evento: '+(e.result?.error?.message||e.message),'error');
+    const msg = e.result?.error?.message || e.message || '';
+    if (e.result?.error?.status === 'PERMISSION_DENIED' || /insufficient|scope|permission/i.test(msg)) {
+      showToast('Falta permiso de Google Calendar. Cierra sesión y vuelve a entrar para autorizarlo.','error');
+    } else {
+      showToast('Error creando evento: '+msg,'error');
+    }
   }
 }
 
