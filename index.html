@@ -1913,8 +1913,10 @@ async function saveFieldVal(fieldId, taskId) {
 function closeDetail() { activeTaskId=null; activeFieldKey=null; document.getElementById('detail-wrap').style.display='none'; renderProject(); }
 
 // ----------------------------------------
+// Per-role resource assignment state. pendingAssignments is keyed by
+// normalized role name (project-wide); same person fills every task
+// that needs that role.
 let pendingAssignments = {};
-let currentResTask = null;
 let currentResMode = 'early';
 let currentResProjId = null;
 
@@ -2034,63 +2036,6 @@ function buildProjectRoleAssignmentMap(proyId, currentPending) {
   return map;
 }
 
-// Open the standard resource creation form but pre-fill the role from
-// the currently selected task and restore the resource-assignment modal
-// once the user saves or cancels.
-function openQuickCreateResourceForTask(taskId) {
-  const task = DB.tareas.find(t => t.id === taskId);
-  const suggestedRole = task ? task.rol : '';
-  const proyId = currentResProjId;
-  const mode = currentResMode;
-  const colors = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
-  document.getElementById('modal-body').innerHTML = `
-    <div class="modal-title">+ Nuevo recurso</div>
-    <div style="font-size:11px;color:var(--gray);margin-bottom:12px">El rol se pre-llenó con "${suggestedRole}" para que aparezca como candidato a esta tarea. Puedes agregar más roles separados por coma.</div>
-    <div class="form-grid">
-      <div class="form-group"><label class="flabel">Nombre completo</label><input class="finput" id="nu-name" placeholder="Nombre y apellido"></div>
-      <div class="form-group"><label class="flabel">Iniciales</label><input class="finput" id="nu-ini" maxlength="2" placeholder="AM"></div>
-      <div class="form-group full"><label class="flabel">Roles (separados por coma)</label><input class="finput" id="nu-roles" value="${suggestedRole}" placeholder="Ventas, Director"></div>
-      <div class="form-group"><label class="flabel">Email</label><input class="finput" id="nu-email" type="email"></div>
-      <div class="form-group"><label class="flabel">Teléfono</label><input class="finput" id="nu-tel"></div>
-      <div class="form-group"><label class="flabel">WhatsApp</label><input class="finput" id="nu-wa"></div>
-      <div class="form-group"><label class="flabel">Color</label><select class="fselect" id="nu-color">${colors.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-secondary" onclick="openResourceAssignmentModal('${proyId}','${mode}')">Cancelar</button>
-      <button class="btn-primary" onclick="saveResourceAndReturnToResModal('${proyId}','${mode}','${taskId}')">Guardar y volver</button>
-    </div>`;
-  document.getElementById('modal-overlay').classList.add('open');
-  setTimeout(()=>document.getElementById('nu-name')?.focus(), 50);
-}
-
-async function saveResourceAndReturnToResModal(proyId, mode, taskId) {
-  const name = document.getElementById('nu-name').value.trim();
-  if (!name) { showToast('Nombre obligatorio','error'); return; }
-  const id = genId();
-  const user = {
-    id, nombre: name,
-    iniciales: document.getElementById('nu-ini').value || name.substring(0,2).toUpperCase(),
-    roles: document.getElementById('nu-roles').value,
-    email: document.getElementById('nu-email').value,
-    telefono: document.getElementById('nu-tel').value,
-    whatsapp: document.getElementById('nu-wa').value,
-    color: document.getElementById('nu-color').value,
-    activo: 'true'
-  };
-  const values = SHEET_HEADERS.usuarios.map(h => user[h] || '');
-  const ok = await sheetsAppend('usuarios', values);
-  if (!ok) { showToast('Error al guardar','error'); return; }
-  DB.usuarios.push(user);
-  showToast('Recurso "'+name+'" creado ✓','success');
-  // Reopen the resource modal then route the new user through the
-  // proper assign flow so multi-role tasks pick the correct slot.
-  setTimeout(() => {
-    openResourceAssignmentModal(proyId, mode);
-    currentResTask = taskId;
-    selectResTask(taskId);
-    assignResUser(taskId, id);
-  }, 50);
-}
 
 // ── Responsable de Proyecto ──────────────────────────────────────────
 // Returns users whose `roles` field contains "Responsable de Proyecto"
@@ -2205,58 +2150,46 @@ function openResponsableUtilizationModal() {
 }
 
 function openResourceAssignmentModal(proyId, mode) {
-  // Preserve any in-progress pending assignments if reopening the same
-  // project/mode (e.g. after the "+ Recurso nuevo" round-trip).
-  const reopeningSame = (currentResProjId === proyId && currentResMode === mode);
+  // pendingAssignments now stores per-role decisions for the whole
+  // project (not per task). Shape: { normRole: { display, userId } }.
+  // Saving walks every task in the project and fills its role slots
+  // from this map, so "Director = Andrea" applies to every task that
+  // needs Director — no need to repeat the choice task by task.
   currentResProjId = proyId;
   currentResMode = mode;
-  if (!reopeningSame) pendingAssignments = {};
+  pendingAssignments = {};
   const proj = DB.proyectos.find(p=>p.id===proyId);
   if (!proj) return;
   const fases = mode==='early' ? FASES_EARLY : FASES_LATE;
-  const tasks = DB.tareas.filter(t=>t.proyecto_id===proyId && fases.includes(t.fase));
+  const modeTasks = DB.tareas.filter(t=>t.proyecto_id===proyId && fases.includes(t.fase));
 
-  // Cross-task auto-fill: scan every task in the project to see which
-  // roles are already covered (saved on the task OR pending from this
-  // session) and pre-fill any unfilled matching role on tasks in this
-  // modal. So once Director is set on one task, every other task that
-  // also needs Director starts pre-assigned — the user doesn't have to
-  // repeat the choice.
-  const roleMap = buildProjectRoleAssignmentMap(proyId, pendingAssignments);
-  for (const t of tasks) {
+  // Pre-fill from existing assignments across ALL project tasks (any
+  // phase). This way the late-phase modal already shows whoever was
+  // chosen in the early modal, and edits made manually on a task are
+  // also reflected here.
+  const allProjTasks = DB.tareas.filter(t=>t.proyecto_id===proyId);
+  for (const t of allProjTasks) {
     const roles = getTaskRolesList(t);
-    const ids = getTaskAssignedIds(t, pendingAssignments[t.id]);
-    let changed = false;
+    const ids = getTaskAssignedIds(t);
     roles.forEach((r, i) => {
-      if (!ids[i]) {
-        const hit = roleMap[normRoleStr(r)];
-        if (hit) {
-          // Only propagate if the candidate user actually still covers
-          // this role (defensive against stale data).
-          const u = DB.usuarios.find(u => u.id === hit.userId);
-          if (u && userCoversRole(u, r)) { ids[i] = hit.userId; changed = true; }
-        }
+      const norm = normRoleStr(r);
+      if (ids[i] && !pendingAssignments[norm]) {
+        pendingAssignments[norm] = { display: r, userId: ids[i] };
       }
     });
-    if (changed) pendingAssignments[t.id] = joinAssignedIds(ids);
   }
-
-  currentResTask = tasks[0]?.id || null;
 
   const title = mode==='early'
     ? 'Asignar responsables — Fases 1 a 3'
     : 'Proyecto aprobado — Asignar responsables Fases 4 a 7';
   const subtitle = mode==='early'
-    ? 'Asigna un responsable a cada tarea de Brief, Conceptualización y Aprobación. Los roles ya asignados se propagan automáticamente a las tareas que los necesitan.'
-    : 'Las fases 1-3 están completas. Asigna recursos para producción y post-producción.';
+    ? 'Elige una persona por rol. Todas las tareas del proyecto que requieran ese rol quedarán asignadas a esa persona.'
+    : 'Asigna una persona por cada rol de producción y post-producción. Aplica a todas las tareas del proyecto que requieran ese rol.';
 
   document.getElementById('modal-body').innerHTML = `
     <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:400;margin-bottom:3px">${title}</div>
     <div style="font-size:11px;color:var(--gray);margin-bottom:14px">${subtitle}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;height:55vh;min-height:300px">
-      <div style="overflow-y:auto;padding-right:4px;height:100%" id="res-task-list"></div>
-      <div style="overflow-y:auto;padding-right:4px;height:100%" id="res-user-list"></div>
-    </div>
+    <div id="res-role-list" style="max-height:55vh;overflow-y:auto;padding-right:4px"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);background:var(--white);position:sticky;bottom:0">
       <div id="res-assign-count" style="font-size:11px;color:var(--gray)"></div>
       <div style="display:flex;gap:8px">
@@ -2265,330 +2198,203 @@ function openResourceAssignmentModal(proyId, mode) {
       </div>
     </div>`;
 
-  renderResTaskList(tasks);
-  if (currentResTask) renderResUserList(currentResTask, proj);
-  updateResCount(tasks);
+  renderResRoleList(modeTasks, proj);
+  updateResCount(modeTasks);
   document.getElementById('modal-body').classList.add('wide');
   document.getElementById('modal-overlay').classList.add('open');
 }
 
-function renderResTaskList(tasks) {
-  const el = document.getElementById('res-task-list');
-  if (!el) return;
-  el.innerHTML = `<div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Tareas</div>` +
-    tasks.map(t => {
-      const roles = getTaskRolesList(t);
-      const ids = getTaskAssignedIds(t, pendingAssignments[t.id]);
-      const filledCount = ids.filter(Boolean).length;
-      const totalRoles = Math.max(1, roles.length);
-      const allFilled = totalRoles > 0 && filledCount >= totalRoles;
-      const noneFilled = filledCount === 0;
-      // Find a representative user to show in the avatar (first filled).
-      const repId = ids.find(Boolean);
-      const u = repId ? DB.usuarios.find(u=>u.id===repId) : null;
-      const isActive = currentResTask===t.id;
-      const indicator = allFilled
-        ? (u ? `<div style="width:22px;height:22px;border-radius:50%;background:${u.color||'#888'}22;color:${u.color||'#888'};display:flex;align-items:center;justify-content:center;font-size:8px;flex-shrink:0">${u.iniciales}</div>` : '<div style="width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0"></div>')
-        : noneFilled
-          ? '<div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0"></div>'
-          : `<div style="font-size:9px;color:var(--warn);font-family:'DM Mono',monospace;flex-shrink:0">${filledCount}/${totalRoles}</div>`;
-      return `<div onclick="selectResTask('${t.id}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:0.5px solid ${isActive?'var(--black)':'var(--border)'};border-radius:6px;margin-bottom:5px;cursor:pointer;background:${isActive?'var(--cream)':'transparent'}">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.nombre}</div>
-          <div style="font-size:10px;color:var(--gray)">${t.fase}${roles.length>1?` · ${roles.length} roles`:''}</div>
-        </div>
-        ${indicator}
-      </div>`;
-    }).join('');
-}
-
-function renderResUserList(taskId, proj) {
-  const el = document.getElementById('res-user-list');
-  if (!el) return;
-  const task = DB.tareas.find(t=>t.id===taskId);
-  if (!task || !proj) return;
-  const pStart2 = new Date(proj.fecha_inicio||'2025-01-01');
-  const sd = new Date(pStart2.getTime()+(parseInt(task.start_day)||0)*864e5);
-  const ed = new Date(sd.getTime()+hoursToDays(parseInt(task.duracion)||8)*864e5);
-  const ss = sd.toISOString().split('T')[0];
-  const es = ed.toISOString().split('T')[0];
-  const fmtD = d => new Date(d).toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
-
-  // Build the union of all task roles (1 for single-role, 2+ for combo)
-  // and intersect with each user's roles to determine eligibility.
-  const taskRoles = getTaskRolesList(task);
-  const currentIds = getTaskAssignedIds(task, pendingAssignments[taskId]);
-
-  // Eligible: user covers at least ONE of the task's roles.
-  const eligible = DB.usuarios.filter(u => taskRoles.some(r => userCoversRole(u, r)));
-  const others = DB.usuarios.filter(u=>!eligible.find(e=>e.id===u.id));
-
-  if (!eligible.length && !others.length) {
-    el.innerHTML = `
-      <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <span>Rol: "${task.rol}" · ${fmtD(ss)} → ${fmtD(es)}</span>
-        <button onclick="openQuickCreateResourceForTask('${taskId}')" style="padding:3px 9px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:9px;cursor:pointer;color:var(--gray);text-transform:none;letter-spacing:0">+ Recurso nuevo</button>
-      </div>
-      <div style="font-size:11px;color:var(--gray);padding:20px 0">Sin usuarios registrados todavía. Crea uno con el botón "+ Recurso nuevo" arriba o desde Configuración → Usuarios.</div>`;
-    return;
-  }
-
-  const withLoad = [...eligible.map(u=>({...u,...getUserLoad(u.id,ss,es),match:true})), ...others.map(u=>({...u,...getUserLoad(u.id,ss,es),match:false}))].sort((a,b)=>(a.match===b.match?a.pct-b.pct:a.match?-1:1));
-  const rec = withLoad.find(u=>u.match) || withLoad[0];
-
-  // Per-role chips at the top: one row per role, showing the current
-  // assignment (with a ✕ to clear it) so the user sees the multi-role
-  // structure of this task clearly.
-  const roleRowsHtml = taskRoles.length ? `
-    <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px;padding:8px 10px;background:var(--cream);border-radius:6px">
-      ${taskRoles.map((r, i) => {
-        const uid = currentIds[i] || '';
-        const u = uid ? DB.usuarios.find(u => u.id === uid) : null;
-        return `<div style="display:flex;align-items:center;gap:8px;font-size:11px">
-          <div style="font-size:9px;color:var(--gray);letter-spacing:0.06em;text-transform:uppercase;min-width:62px">Rol ${taskRoles.length>1?(i+1):''}</div>
-          <div style="flex:1;font-size:11px">${r}</div>
-          ${u
-            ? `<div style="display:flex;align-items:center;gap:6px"><div style="width:20px;height:20px;border-radius:50%;background:${u.color||'#888'}22;color:${u.color||'#888'};display:flex;align-items:center;justify-content:center;font-size:8px">${u.iniciales}</div><span style="font-size:10px">${u.nombre}</span><button onclick="clearResRoleAssignment('${taskId}',${i})" title="Quitar" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:13px;padding:0 4px">✕</button></div>`
-            : `<span style="font-size:10px;color:var(--lgray);font-style:italic">Sin asignar</span>`}
-        </div>`;
-      }).join('')}
-    </div>` : '';
-
-  el.innerHTML = `<div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px">
-      <span>${taskRoles.length>1?`${taskRoles.length} roles`:`Rol: "${task.rol}"`} · ${fmtD(ss)} → ${fmtD(es)}</span>
-      <button onclick="openQuickCreateResourceForTask('${taskId}')" style="padding:3px 9px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:9px;cursor:pointer;color:var(--gray);text-transform:none;letter-spacing:0">+ Recurso nuevo</button>
-    </div>
-    ${roleRowsHtml}` +
-    withLoad.map(u => {
-      const isRec = u.id===rec?.id && u.match;
-      const isSel = currentIds.includes(u.id);
-      const isOver = u.pct>=90;
-      const bc = isOver?'var(--red)':isRec?'var(--green)':'var(--blue)';
-      const taskDetailHtml = u.projs.length
-        ? u.projs.map(p=>`<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--gray);padding:3px 0;border-bottom:0.5px solid var(--border)"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${p.name}</span><span style="flex-shrink:0;margin-left:8px">${p.days}d · <span style="color:${STATUS_COLORS[p.status]||'#888'}">${p.status}</span></span></div>`).join('')
-        : '<div style="font-size:10px;color:var(--green);padding:3px 0">Sin asignaciones en este periodo</div>';
-      return `<div style="border:${isSel?'1.5px solid var(--black)':isRec?'1.5px solid var(--green)':'0.5px solid var(--border)'};border-radius:8px;padding:10px 12px;margin-bottom:6px;background:${isSel?'var(--cream)':isOver?'#a8383810':'transparent'};position:relative;${!u.match?'opacity:0.55':''}">
-        ${isRec?'<div style="position:absolute;top:7px;right:8px;background:var(--green);color:#fff;font-size:9px;padding:1px 6px;border-radius:2px;letter-spacing:0.04em">Recomendado</div>':''}
-        ${!u.match?'<div style="position:absolute;top:7px;right:8px;font-size:9px;color:var(--gray)">Rol diferente</div>':''}
-        <div onclick="assignResUser('${taskId}','${u.id}')" style="display:flex;align-items:center;gap:8px;margin-bottom:7px;cursor:pointer">
-          <div style="width:30px;height:30px;border-radius:50%;background:${u.color||'#888'}22;color:${u.color||'#888'};display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">${u.iniciales}</div>
-          <div style="flex:1"><div style="font-size:12px">${u.nombre}${isSel?' ✓':''}</div><div style="font-size:10px;color:var(--gray)">${u.roles||''}</div></div>
-          <div style="text-align:right;cursor:pointer" onclick="event.stopPropagation();toggleUtilDetail('util_${u.id}')">
-            <div style="font-family:'Cormorant Garamond',serif;font-size:18px;color:${bc}">${u.pct}%</div>
-            <div style="font-size:9px;color:var(--gray)">${u.used}/${u.total}d ▾</div>
-          </div>
-        </div>
-        <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:5px"><div style="height:100%;width:${u.pct}%;background:${bc};border-radius:3px"></div></div>
-        <div id="util_${u.id}" style="display:none;margin-top:6px;padding:6px 0;border-top:0.5px solid var(--border)">
-          ${taskDetailHtml}
-        </div>
-        ${isOver?'<div style="margin-top:6px;font-size:10px;color:var(--red);padding:3px 7px;background:#a8383810;border-radius:3px">⚠ Recurso al '+u.pct+'% de capacidad</div>':''}
-      </div>`;
-    }).join('');
-}
-
-function selectResTask(taskId) {
-  currentResTask = taskId;
-  const proj = DB.proyectos.find(p=>p.id===currentResProjId);
-  const fases = currentResMode==='early' ? FASES_EARLY : FASES_LATE;
-  const tasks = DB.tareas.filter(t=>t.proyecto_id===currentResProjId && fases.includes(t.fase));
-  renderResTaskList(tasks);
-  renderResUserList(taskId, proj);
-}
-
-// After any role gets assigned on one task, look at every OTHER task
-// in the project that still has that role unfilled and the candidate
-// can cover. Pre-fill those slots so the user doesn't repeat the choice.
-function propagateRoleInModal(roleName, userId) {
-  if (!roleName || !userId) return;
-  const u = DB.usuarios.find(u => u.id === userId);
-  if (!u || !userCoversRole(u, roleName)) return;
-  const target = normRoleStr(roleName);
-  const projTasks = DB.tareas.filter(t => t.proyecto_id === currentResProjId);
-  for (const t of projTasks) {
+// Aggregate the unique roles needed by a set of tasks. Returns one
+// entry per role with: display name, count of tasks needing it,
+// date window (min start → max end) used to compute utilization.
+function aggregateProjectRoles(tasks, proj) {
+  const [py, pm, pd] = (proj?.fecha_inicio||'2025-01-01').split('-').map(Number);
+  const pStart = new Date(py, pm-1, pd);
+  const map = {};
+  for (const t of tasks) {
     const roles = getTaskRolesList(t);
-    const ids = getTaskAssignedIds(t, pendingAssignments[t.id]);
-    let changed = false;
-    roles.forEach((r, i) => {
-      if (!ids[i] && normRoleStr(r) === target) { ids[i] = userId; changed = true; }
+    const sd = new Date(pStart.getTime() + (parseInt(t.start_day)||0)*864e5);
+    const ed = new Date(sd.getTime() + hoursToDays(parseInt(t.duracion)||8)*864e5);
+    const sortKey = parseInt(t.start_day) || 0;
+    roles.forEach(r => {
+      const norm = normRoleStr(r);
+      if (!map[norm]) map[norm] = { norm, display: r, taskCount: 0, minStart: sd, maxEnd: ed, sortKey };
+      map[norm].taskCount++;
+      if (sd < map[norm].minStart) map[norm].minStart = sd;
+      if (ed > map[norm].maxEnd) map[norm].maxEnd = ed;
+      if (sortKey < map[norm].sortKey) map[norm].sortKey = sortKey;
     });
-    if (changed) pendingAssignments[t.id] = joinAssignedIds(ids);
   }
+  return Object.values(map).sort((a, b) => a.sortKey - b.sortKey);
 }
 
-// Clicking a candidate: figure out which role slot they should fill.
-// - If they cover exactly ONE of the task's roles → fill that one.
-// - If multiple match → ask which role they're being assigned to.
-// - If they're already assigned to a slot, clicking again removes them.
-function assignResUser(taskId, userId) {
-  const task = DB.tareas.find(t=>t.id===taskId);
-  if (!task) return;
-  const roles = getTaskRolesList(task);
-  const ids = getTaskAssignedIds(task, pendingAssignments[taskId]);
-  const user = DB.usuarios.find(u => u.id === userId);
-  if (!user) return;
+function renderResRoleList(modeTasks, proj) {
+  const el = document.getElementById('res-role-list');
+  if (!el) return;
+  const roleEntries = aggregateProjectRoles(modeTasks, proj);
 
-  // Already assigned somewhere on this task → toggle off.
-  const existingIdx = ids.indexOf(userId);
-  if (existingIdx >= 0) {
-    ids[existingIdx] = '';
-    pendingAssignments[taskId] = joinAssignedIds(ids);
-    rerenderResModal();
+  if (!roleEntries.length) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--gray);padding:24px;text-align:center">No hay roles configurados en las tareas de esta fase. Define los roles en Tipos de proyecto.</div>`;
     return;
   }
 
-  // Roles on this task that the user covers AND that aren't filled yet.
-  const candidateRoleIdxs = roles
-    .map((r, i) => ({ r, i }))
-    .filter(({r, i}) => !ids[i] && userCoversRole(user, r))
-    .map(({i}) => i);
+  const fmtD = d => d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+  el.innerHTML = roleEntries.map(re => {
+    const eligible = DB.usuarios.filter(u => userCoversRole(u, re.display) && u.activo !== 'false');
+    const current = pendingAssignments[re.norm]?.userId || '';
+    const ss = ymdLocal(re.minStart);
+    const es = ymdLocal(re.maxEnd);
+    const u = current ? DB.usuarios.find(x => x.id === current) : null;
+    const load = current ? getUserLoad(current, ss, es) : null;
+    const utilColor = !load ? 'var(--lgray)' : load.pct >= 90 ? 'var(--red)' : load.pct >= 70 ? 'var(--warn)' : 'var(--green)';
 
-  if (candidateRoleIdxs.length === 1) {
-    const idx = candidateRoleIdxs[0];
-    ids[idx] = userId;
-    pendingAssignments[taskId] = joinAssignedIds(ids);
-    propagateRoleInModal(roles[idx], userId);
-    rerenderResModal();
-    autoAdvanceAfterAssign(taskId);
-    return;
-  }
+    // Encode the display role to survive going through HTML attributes.
+    const displayEsc = re.display.replace(/'/g, "\\'");
 
-  if (candidateRoleIdxs.length === 0) {
-    // No role match — let the user override by choosing which slot.
-    // Prefer unfilled slots; if all filled, offer to replace.
-    const slotOptions = roles
-      .map((r, i) => ({ r, i, filled: !!ids[i] }))
-      .filter(o => !o.filled);
-    if (slotOptions.length === 0) {
-      // All slots filled → present full list as replacement targets.
-      openRoleChoiceDialog(taskId, userId, roles.map((r,i)=>({r,i,filled:true})));
-      return;
-    }
-    openRoleChoiceDialog(taskId, userId, slotOptions);
-    return;
-  }
-
-  // Multiple matching roles → ask.
-  openRoleChoiceDialog(taskId, userId, candidateRoleIdxs.map(i => ({ r: roles[i], i, filled: !!ids[i] })));
-}
-
-// Inline dialog with one button per role choice. Sits on top of the
-// resource modal without replacing its contents.
-function openRoleChoiceDialog(taskId, userId, options) {
-  const user = DB.usuarios.find(u => u.id === userId);
-  const userName = user?.nombre || 'este recurso';
-  // Remove any prior dialog
-  document.getElementById('role-choice-overlay')?.remove();
-  const overlay = document.createElement('div');
-  overlay.id = 'role-choice-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:#0006;display:flex;align-items:center;justify-content:center;z-index:9999';
-  overlay.innerHTML = `
-    <div style="background:var(--white);border-radius:8px;padding:18px 20px;width:min(420px,92vw);box-shadow:0 8px 24px #0003">
-      <div style="font-family:'Cormorant Garamond',serif;font-size:18px;margin-bottom:6px">¿Qué rol cubre ${userName}?</div>
-      <div style="font-size:11px;color:var(--gray);margin-bottom:14px">Esta tarea tiene varios roles. Elige cuál ocupará.</div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        ${options.map(o => `<button onclick="confirmRoleChoice('${taskId}','${userId}',${o.i})" style="padding:10px 12px;text-align:left;border:0.5px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:inherit;font-size:12px">
-          <div>${o.r}${o.filled?' <span style="font-size:9px;color:var(--warn)">(reemplaza al actual)</span>':''}</div>
-        </button>`).join('')}
+    return `<div style="border:0.5px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:8px;background:var(--white)">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:160px">
+          <div style="font-size:13px">${re.display}</div>
+          <div style="font-size:10px;color:var(--gray);margin-top:2px">${re.taskCount} tarea${re.taskCount===1?'':'s'} · ${fmtD(re.minStart)} → ${fmtD(re.maxEnd)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:220px">
+          <select onchange="assignRole('${re.norm}', this.value, '${displayEsc}')" style="flex:1;padding:7px 10px;border:0.5px solid var(--border);border-radius:5px;font-family:'DM Mono',monospace;font-size:11px;background:var(--white)">
+            <option value="">— Sin asignar —</option>
+            ${eligible.map(eu => `<option value="${eu.id}"${eu.id===current?' selected':''}>${eu.nombre}${eu.roles && eu.roles.split(',').length > 1 ? ' · '+eu.roles : ''}</option>`).join('')}
+          </select>
+          <button onclick="openQuickCreateResourceForRole('${displayEsc}')" title="Crear nuevo recurso con este rol" style="padding:6px 9px;border:0.5px solid var(--border);border-radius:5px;background:none;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;color:var(--gray);white-space:nowrap">+ Nuevo</button>
+        </div>
+        <div style="min-width:80px;text-align:right">
+          ${load ? `
+            <div style="font-family:'Cormorant Garamond',serif;font-size:18px;color:${utilColor}">${load.pct}%</div>
+            <div style="font-size:9px;color:var(--gray)">${load.used}/${load.total}d</div>
+          ` : `<div style="font-size:10px;color:var(--lgray)">—</div>`}
+        </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:14px">
-        <button class="btn-secondary" onclick="document.getElementById('role-choice-overlay').remove()">Cancelar</button>
-      </div>
+      ${load && load.pct >= 90 ? `<div style="margin-top:8px;font-size:10px;color:var(--red);padding:4px 8px;background:#a8383810;border-radius:3px">⚠ ${u?.nombre || 'Recurso'} está al ${load.pct}% de capacidad en este periodo</div>` : ''}
     </div>`;
-  document.body.appendChild(overlay);
+  }).join('');
 }
 
-function confirmRoleChoice(taskId, userId, roleIdx) {
-  document.getElementById('role-choice-overlay')?.remove();
-  const task = DB.tareas.find(t=>t.id===taskId);
-  if (!task) return;
-  const roles = getTaskRolesList(task);
-  const ids = getTaskAssignedIds(task, pendingAssignments[taskId]);
-  // If this user was already in another slot, clear that one first.
-  ids.forEach((v, j) => { if (v === userId && j !== roleIdx) ids[j] = ''; });
-  ids[roleIdx] = userId;
-  pendingAssignments[taskId] = joinAssignedIds(ids);
-  propagateRoleInModal(roles[roleIdx], userId);
-  rerenderResModal();
-  autoAdvanceAfterAssign(taskId);
-}
-
-function clearResRoleAssignment(taskId, roleIdx) {
-  const task = DB.tareas.find(t=>t.id===taskId);
-  if (!task) return;
-  const ids = getTaskAssignedIds(task, pendingAssignments[taskId]);
-  ids[roleIdx] = '';
-  pendingAssignments[taskId] = joinAssignedIds(ids);
-  rerenderResModal();
-}
-
-function rerenderResModal() {
-  const proj = DB.proyectos.find(p=>p.id===currentResProjId);
-  const fases = currentResMode==='early' ? FASES_EARLY : FASES_LATE;
-  const tasks = DB.tareas.filter(t=>t.proyecto_id===currentResProjId && fases.includes(t.fase));
-  renderResTaskList(tasks);
-  if (currentResTask) renderResUserList(currentResTask, proj);
-  updateResCount(tasks);
-}
-
-function autoAdvanceAfterAssign(taskId) {
-  // Only auto-advance if THIS task is now fully staffed.
-  const task = DB.tareas.find(t=>t.id===taskId);
-  if (!task) return;
-  const roles = getTaskRolesList(task);
-  const ids = getTaskAssignedIds(task, pendingAssignments[taskId]);
-  if (roles.length && ids.every(Boolean)) {
-    const proj = DB.proyectos.find(p=>p.id===currentResProjId);
-    const fases = currentResMode==='early' ? FASES_EARLY : FASES_LATE;
-    const tasks = DB.tareas.filter(t=>t.proyecto_id===currentResProjId && fases.includes(t.fase));
-    const nextTask = tasks.find(t => {
-      if (t.id === taskId) return false;
-      const tr = getTaskRolesList(t);
-      const tids = getTaskAssignedIds(t, pendingAssignments[t.id]);
-      return tr.length === 0 || !tids.every(Boolean);
-    });
-    if (nextTask) setTimeout(()=>selectResTask(nextTask.id), 300);
+// Assign/clear a project-wide role. Triggered by the dropdown change.
+function assignRole(normRole, userId, displayRole) {
+  if (userId) {
+    pendingAssignments[normRole] = { display: displayRole, userId };
+  } else {
+    delete pendingAssignments[normRole];
   }
+  const proj = DB.proyectos.find(p => p.id === currentResProjId);
+  const fases = currentResMode==='early' ? FASES_EARLY : FASES_LATE;
+  const modeTasks = DB.tareas.filter(t => t.proyecto_id===currentResProjId && fases.includes(t.fase));
+  renderResRoleList(modeTasks, proj);
+  updateResCount(modeTasks);
 }
 
-function updateResCount(tasks) {
+// + Nuevo recurso, with the role of the current row pre-filled.
+function openQuickCreateResourceForRole(roleName) {
+  const proyId = currentResProjId;
+  const mode = currentResMode;
+  const colors = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">+ Nuevo recurso</div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:12px">El rol se prellena con "${roleName}" para que aparezca de inmediato como candidato al guardar.</div>
+    <div class="form-grid">
+      <div class="form-group"><label class="flabel">Nombre completo</label><input class="finput" id="nu-name" placeholder="Nombre y apellido"></div>
+      <div class="form-group"><label class="flabel">Iniciales</label><input class="finput" id="nu-ini" maxlength="2" placeholder="AM"></div>
+      <div class="form-group full"><label class="flabel">Roles (separados por coma)</label><input class="finput" id="nu-roles" value="${roleName}" placeholder="Ventas, Director"></div>
+      <div class="form-group"><label class="flabel">Email</label><input class="finput" id="nu-email" type="email"></div>
+      <div class="form-group"><label class="flabel">Teléfono</label><input class="finput" id="nu-tel"></div>
+      <div class="form-group"><label class="flabel">WhatsApp</label><input class="finput" id="nu-wa"></div>
+      <div class="form-group"><label class="flabel">Color</label><select class="fselect" id="nu-color">${colors.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="openResourceAssignmentModal('${proyId}','${mode}')">Cancelar</button>
+      <button class="btn-primary" onclick="saveResourceAndReturnToRoleModal('${proyId}','${mode}','${roleName.replace(/'/g,"\\'")}')">Guardar y volver</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('nu-name')?.focus(), 50);
+}
+
+async function saveResourceAndReturnToRoleModal(proyId, mode, roleName) {
+  const name = document.getElementById('nu-name').value.trim();
+  if (!name) { showToast('Nombre obligatorio','error'); return; }
+  const id = genId();
+  const user = {
+    id, nombre: name,
+    iniciales: document.getElementById('nu-ini').value || name.substring(0,2).toUpperCase(),
+    roles: document.getElementById('nu-roles').value,
+    email: document.getElementById('nu-email').value,
+    telefono: document.getElementById('nu-tel').value,
+    whatsapp: document.getElementById('nu-wa').value,
+    color: document.getElementById('nu-color').value,
+    activo: 'true'
+  };
+  const values = SHEET_HEADERS.usuarios.map(h => user[h] || '');
+  const ok = await sheetsAppend('usuarios', values);
+  if (!ok) { showToast('Error al guardar','error'); return; }
+  DB.usuarios.push(user);
+  showToast('Recurso "'+name+'" creado ✓','success');
+  // Reopen the role modal and pre-select the new user for this role.
+  setTimeout(() => {
+    openResourceAssignmentModal(proyId, mode);
+    pendingAssignments[normRoleStr(roleName)] = { display: roleName, userId: id };
+    const proj = DB.proyectos.find(p => p.id === proyId);
+    const fases = mode==='early' ? FASES_EARLY : FASES_LATE;
+    const modeTasks = DB.tareas.filter(t => t.proyecto_id===proyId && fases.includes(t.fase));
+    renderResRoleList(modeTasks, proj);
+    updateResCount(modeTasks);
+  }, 50);
+}
+
+function updateResCount(modeTasks) {
   const el = document.getElementById('res-assign-count');
   if (!el) return;
-  // A task counts as "asignada" when every one of its roles has a user.
-  const done = tasks.filter(t => {
-    const roles = getTaskRolesList(t);
-    const ids = getTaskAssignedIds(t, pendingAssignments[t.id]);
-    return roles.length > 0 && ids.every(Boolean);
-  }).length;
-  el.textContent = done+'/'+tasks.length+' asignadas';
-  el.style.color = done===tasks.length ? 'var(--green)' : 'var(--gray)';
+  const proj = DB.proyectos.find(p => p.id === currentResProjId);
+  if (!proj) return;
+  const roleEntries = aggregateProjectRoles(modeTasks, proj);
+  const total = roleEntries.length;
+  const done = roleEntries.filter(re => pendingAssignments[re.norm]?.userId).length;
+  el.textContent = done+'/'+total+' roles asignados';
+  el.style.color = done===total && total>0 ? 'var(--green)' : 'var(--gray)';
 }
 
-function toggleUtilDetail(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-
+// Save: walk every task in the project and apply the role → user map.
+// Tasks whose roles aren't in the pending map keep their existing
+// assignment for that slot (so partial assignments don't get wiped).
 async function saveAllAssignments(proyId) {
-  const assigned = Object.entries(pendingAssignments);
-  if (!assigned.length) { closeModal(); return; }
+  if (!Object.keys(pendingAssignments).length) { closeModal(); return; }
   showToast('Guardando asignaciones...', 'info');
-  for (const [taskId, value] of assigned) {
-    const task = DB.tareas.find(t=>t.id===taskId);
-    if (!task) continue;
-    // `value` is already the comma-joined id list aligned to task.rol.
-    // For single-role tasks it's just a plain id, matching old behavior.
-    task.usuario_id = value;
-    const rowNum = getRowNum('tareas', taskId);
-    if (rowNum >= 0) {
-      await sheetsUpdate('tareas', rowNum, SHEET_HEADERS.tareas.map(h=>task[h]||''));
+  const projTasks = DB.tareas.filter(t => t.proyecto_id === proyId);
+  let updated = 0;
+  for (const task of projTasks) {
+    const roles = getTaskRolesList(task);
+    if (!roles.length) continue;
+    const currentIds = getTaskAssignedIds(task);
+    let changed = false;
+    const newIds = roles.map((r, i) => {
+      const hit = pendingAssignments[normRoleStr(r)];
+      if (hit && hit.userId) {
+        if (currentIds[i] !== hit.userId) changed = true;
+        return hit.userId;
+      }
+      // Role not in pending map → keep whatever was there before.
+      return currentIds[i] || '';
+    });
+    if (changed) {
+      task.usuario_id = joinAssignedIds(newIds);
+      const rowNum = getRowNum('tareas', task.id);
+      if (rowNum >= 0) {
+        await sheetsUpdate('tareas', rowNum, SHEET_HEADERS.tareas.map(h=>task[h]||''));
+        updated++;
+      }
     }
   }
   closeModal();
   renderProject();
-  showToast(`${assigned.length} asignaciones guardadas ✓`, 'success');
+  showToast(updated+' tareas actualizadas ✓', 'success');
 }
+
+// Legacy per-task assignment helpers removed; replaced by the per-role flow above.
 
 // ----------------------------------------
 function openNewProjectModal() {
