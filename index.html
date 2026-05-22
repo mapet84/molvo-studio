@@ -575,14 +575,34 @@ let activeProjectId = null, activeTaskId = null, activeFieldKey = null;
 let selectedClientId = null;
 
 // ----------------------------------------
+// True once gapi.client.calendar is available. Calendar is optional —
+// if its discovery doc or scope fails to load (e.g. the API isn't
+// enabled on the Cloud project), login still works and "Enviar cita"
+// will surface a clear error instead of crashing the app.
+let calendarReady = false;
+
 function loadGapi() {
   return new Promise(res => {
     const s = document.createElement('script');
     s.src = 'https://apis.google.com/js/api.js';
     s.onload = () => gapi.load('client', async () => {
-      await gapi.client.init({ apiKey: API_KEY, discoveryDocs: DISCOVERY });
+      // Try full init (Sheets + Calendar) first.
+      try {
+        await gapi.client.init({ apiKey: API_KEY, discoveryDocs: DISCOVERY });
+        calendarReady = !!(gapi.client && gapi.client.calendar);
+      } catch (e) {
+        console.warn('gapi.client.init full failed, retrying with Sheets only:', e);
+        // Retry with just the core (Sheets) discovery so the app can still load.
+        try {
+          await gapi.client.init({ apiKey: API_KEY, discoveryDocs: [DISCOVERY[0]] });
+        } catch (e2) {
+          console.error('gapi.client.init failed entirely:', e2);
+        }
+        calendarReady = false;
+      }
       res();
     });
+    s.onerror = () => { console.error('Failed to load apis.google.com/js/api.js'); res(); };
     document.head.appendChild(s);
   });
 }
@@ -3139,6 +3159,33 @@ function saveTipos() {
   if (s) { try { tipoTasks = JSON.parse(s); } catch(e){} }
 })();
 
+// One-shot migration: older builds of getDefaultTipoTasks() multiplied
+// STANDARD_TASKS.duracion (already in HOURS) by 8 when seeding `horas`,
+// inflating every default-seeded task 8x. Detect that exact pattern by
+// matching task name → STANDARD_TASKS.duracion, and divide back. Tasks
+// the user customized manually won't match and are left alone.
+(function migrateInflatedTipoHours() {
+  if (!tipoTasks) return;
+  if (localStorage.getItem('molvo_tipo_hours_migrated_v1') === '1') return;
+  const stdByName = Object.create(null);
+  for (const t of (STANDARD_TASKS||[])) stdByName[t.nombre] = t.duracion;
+  let changed = false;
+  for (const tipo of Object.keys(tipoTasks)) {
+    for (const t of (tipoTasks[tipo]||[])) {
+      const std = stdByName[t.nombre];
+      // Only fix the precise inflated default; leave anything else alone.
+      if (std != null && Number(t.horas) === std * 8) {
+        t.horas = std;
+        changed = true;
+      }
+    }
+  }
+  if (changed) {
+    try { localStorage.setItem('molvo_tipo_tasks', JSON.stringify(tipoTasks)); } catch(e){}
+  }
+  localStorage.setItem('molvo_tipo_hours_migrated_v1', '1');
+})();
+
 let activeUserId = null;
 
 function renderConfig() {
@@ -4469,8 +4516,8 @@ async function sendCalendarInvite(taskId) {
   const endDt = endLocal.getFullYear()+'-'+pad(endLocal.getMonth()+1)+'-'+pad(endLocal.getDate())+'T'+pad(endLocal.getHours())+':'+pad(endLocal.getMinutes())+':00';
 
   try {
-    if (!gapi.client.calendar) {
-      showToast('Google Calendar aún no está cargado. Cierra sesión y vuelve a entrar para habilitarlo.','error');
+    if (!calendarReady || !(gapi.client && gapi.client.calendar)) {
+      showToast('Google Calendar no está disponible. Verifica que la API esté habilitada en tu proyecto de Google Cloud o cierra sesión y vuelve a entrar.','error');
       return;
     }
     const event = {
