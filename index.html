@@ -2131,20 +2131,20 @@ function openNewProjectModal() {
       <div class="form-group"><label class="flabel">Cliente</label>
         <select class="fselect" id="np-client">${clients.length ? clients.map(c=>`<option value="${c.id}">${c.nombre}</option>`).join('') : '<option value="">Sin clientes registrados</option>'}</select>
       </div>
-      <div class="form-group"><label class="flabel">Fecha de inicio</label><input type="date" class="finput" id="np-start" value="${new Date().toISOString().split('T')[0]}" onchange="calcEstimatedDelivery()"></div>
       <div class="form-group">
         <label class="flabel">Fecha de entrega (cliente)</label>
-        <input type="date" class="finput" id="np-end">
-        <div style="font-size:10px;color:var(--gray);margin-top:3px">Esta es la fecha comprometida con el cliente.</div>
+        <input type="date" class="finput" id="np-end" onchange="calcStartFromDeadline()">
+        <div style="font-size:10px;color:var(--gray);margin-top:3px">Fecha comprometida con el cliente.</div>
       </div>
       <div class="form-group">
-        <label class="flabel">Fecha estimada (sistema) <span style="color:var(--accent)">Auto</span></label>
-        <div id="np-estimated" style="padding:7px 10px;border:0.5px solid var(--border);border-radius:5px;background:var(--sand);font-size:12px;color:var(--gray)">Se calcula al seleccionar inicio y tipo</div>
-        <div style="font-size:10px;color:var(--gray);margin-top:3px">Calculada con las horas de las tareas y el horario laboral.</div>
+        <label class="flabel">Fecha de inicio sugerida <span style="color:var(--accent)">Auto</span></label>
+        <div id="np-start-display" style="padding:7px 10px;border:0.5px solid var(--border);border-radius:5px;background:var(--sand);font-size:12px;color:var(--gray);min-height:32px">Selecciona fecha de entrega y tipo</div>
+        <input type="hidden" id="np-start" value="">
+        <div style="font-size:10px;color:var(--gray);margin-top:3px">Calculada contando hacia atrás desde la fecha de entrega.</div>
       </div>
       <div class="form-group"><label class="flabel">Presupuesto</label><input class="finput" id="np-budget" placeholder="$000,000"></div>
       <div class="form-group"><label class="flabel">Tipo</label>
-        <select class="fselect" id="np-type" onchange="calcEstimatedDelivery()">${getProjectTypes().map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+        <select class="fselect" id="np-type" onchange="calcStartFromDeadline()">${getProjectTypes().map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
       </div>
       <div class="form-group full"><label class="flabel">Status</label>
         <select class="fselect" id="np-status"><option>Por iniciar</option><option>En progreso</option><option>Atrasado</option><option>En riesgo</option><option>Completado</option></select>
@@ -2226,47 +2226,92 @@ function computeScheduleFromTasks(startVal, tasks) {
   return {estimated: new Date(d), totalHours, target, calDays};
 }
 
-function calcEstimatedDelivery() {
-  const startEl = document.getElementById('np-start');
+// Reverse projector: given a deadline (YYYY-MM-DD) and a list of tasks,
+// walks BACKWARDS through working days to find the latest possible start
+// date that lets the project still meet the deadline.
+function computeStartFromDeadline(endVal, tasks) {
+  if (!endVal || !tasks) return null;
+  const hpd = hoursPerDay();
+  const totalHours = tasks.reduce((s,t) => s + (parseInt(t.horas||0)||parseInt(t.duracion||0)*hpd||0), 0);
+  const target = Math.ceil(totalHours / hpd);
+  const dayNames = ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
+  const [ey, em, ed] = endVal.split('-').map(Number);
+  const d = new Date(ey, em-1, ed);
+  const pad = n => String(n).padStart(2,'0');
+  const ymd = dt => dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());
+  let workDays = 0, calDays = 0;
+  if (target <= 0) return {start: new Date(d), totalHours: 0, target: 0, calDays: 0};
+  while (true) {
+    const dateStr = ymd(d);
+    const sch = workSchedule[dayNames[d.getDay()]];
+    if (sch && sch.active) {
+      const hol = typeof isHoliday === 'function' ? isHoliday(dateStr) : null;
+      if (!hol || hol.tipo !== 'festivo') workDays++;
+      if (hol && hol.tipo === 'medio') workDays -= 0.5;
+    }
+    if (workDays >= target) break;
+    d.setDate(d.getDate()-1);
+    calDays++;
+    if (calDays > 730) break;
+  }
+  return {start: new Date(d), totalHours, target, calDays};
+}
+
+function ymdLocal(dt) {
+  const pad = n => String(n).padStart(2,'0');
+  return dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());
+}
+
+function todayYMD() {
+  const t = new Date(); t.setHours(0,0,0,0);
+  return ymdLocal(t);
+}
+
+function calcStartFromDeadline() {
+  const endEl = document.getElementById('np-end');
   const typeEl = document.getElementById('np-type');
-  const outEl = document.getElementById('np-estimated');
-  if (!startEl||!outEl) return;
-  const startVal = startEl.value;
-  if (!startVal) { if(outEl) outEl.textContent='Selecciona fecha de inicio'; return; }
+  const dispEl = document.getElementById('np-start-display');
+  const hiddenEl = document.getElementById('np-start');
+  if (!endEl || !dispEl) return;
+  const endVal = endEl.value;
+  if (!endVal) {
+    dispEl.textContent = 'Selecciona fecha de entrega';
+    if (hiddenEl) hiddenEl.value = '';
+    return;
+  }
 
   const tipo = typeEl ? typeEl.value : '';
   let tasks = [];
   const tipoKey = findTipoKey(tipo);
-  if (tipoKey !== null) {
-    tasks = tipoTasks[tipoKey] || [];
-  } else if (catalogTareas && catalogTareas.length) {
-    tasks = catalogTareas;
+  if (tipoKey !== null) tasks = tipoTasks[tipoKey] || [];
+  else if (catalogTareas && catalogTareas.length) tasks = catalogTareas;
+  else tasks = STANDARD_TASKS;
+  if (!tasks.length) { dispEl.textContent = 'Sin tareas en la plantilla'; return; }
+
+  const sched = computeStartFromDeadline(endVal, tasks);
+  if (!sched) { dispEl.textContent = '—'; return; }
+
+  const startStr = ymdLocal(sched.start);
+  if (hiddenEl) hiddenEl.value = startStr;
+
+  const fmt = sched.start.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const today = new Date(); today.setHours(0,0,0,0);
+  const startMid = new Date(sched.start); startMid.setHours(0,0,0,0);
+  const diffDays = Math.round((startMid - today)/(1000*60*60*24));
+
+  let html = `<b style="color:var(--black)">${fmt}</b> <span style="color:var(--gray);font-size:10px">(${sched.target} días laborales · ${Math.round(sched.totalHours)}h totales)</span>`;
+  if (diffDays < 0) {
+    html += `<div style="margin-top:4px;font-size:10px;color:var(--red)">⚠ La fecha de inicio sugerida fue hace ${Math.abs(diffDays)} días. No hay tiempo suficiente — al crear el proyecto podrás calibrar las horas para reducir la duración.</div>`;
+  } else if (diffDays === 0) {
+    html += `<div style="margin-top:4px;font-size:10px;color:var(--green)">✓ Hay que empezar hoy mismo para entregar a tiempo.</div>`;
   } else {
-    tasks = STANDARD_TASKS;
+    html += `<div style="margin-top:4px;font-size:10px;color:var(--green)">✓ Hay ${diffDays} día${diffDays===1?'':'s'} de margen antes del inicio sugerido.</div>`;
   }
-  if (!tasks.length) { outEl.textContent='Sin tareas en la plantilla'; return; }
-
-  const sched = computeScheduleFromTasks(startVal, tasks);
-  if (!sched) { outEl.textContent='—'; return; }
-  const fmt = sched.estimated.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
-  const [sy, sm, sd_] = startVal.split('-').map(Number);
-  const startDate = new Date(sy, sm-1, sd_);
-  const diff = Math.round((sched.estimated - startDate)/(1000*60*60*24));
-
-  outEl.innerHTML = `<b style="color:var(--black)">${fmt}</b> <span style="color:var(--gray);font-size:10px">(~${diff} días calendario · ${sched.target} días laborales · ${Math.round(sched.totalHours)}h totales)</span>`;
-
-  const endEl = document.getElementById('np-end');
-  if (endEl && endEl.value) {
-    const [ey, em, ed] = endEl.value.split('-').map(Number);
-    const clientDate = new Date(ey, em-1, ed);
-    if (sched.estimated > clientDate) {
-      outEl.innerHTML += `<div style="margin-top:4px;font-size:10px;color:var(--red)">⚠ La estimación supera la fecha comprometida con el cliente en ${Math.round((sched.estimated-clientDate)/(1000*60*60*24))} días. Al crear el proyecto podrás calibrar las horas para ajustarlo.</div>`;
-    } else {
-      const margin = Math.round((clientDate-sched.estimated)/(1000*60*60*24));
-      outEl.innerHTML += `<div style="margin-top:4px;font-size:10px;color:var(--green)">✓ Hay un margen de ${margin} días antes de la fecha del cliente.</div>`;
-    }
-  }
+  dispEl.innerHTML = html;
 }
+
+// Back-compat alias in case anything still calls the old name.
+const calcEstimatedDelivery = calcStartFromDeadline;
 
 async function createProject() {
   const name = document.getElementById('np-name').value.trim();
