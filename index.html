@@ -580,38 +580,63 @@ let selectedClientId = null;
 // enabled on the Cloud project), login still works and "Enviar cita"
 // will surface a clear error instead of crashing the app.
 let calendarReady = false;
+let gapiInited = false;
 
+async function _initGapiClient() {
+  // Try full init (Sheets + Calendar) first.
+  try {
+    await gapi.client.init({ apiKey: API_KEY, discoveryDocs: DISCOVERY });
+    calendarReady = !!(gapi.client && gapi.client.calendar);
+  } catch (e) {
+    console.warn('gapi.client.init full failed, retrying with Sheets only:', e);
+    try {
+      await gapi.client.init({ apiKey: API_KEY, discoveryDocs: [DISCOVERY[0]] });
+      calendarReady = false;
+    } catch (e2) {
+      console.error('gapi.client.init failed entirely:', e2);
+      return false;
+    }
+  }
+  gapiInited = true;
+  return true;
+}
+
+// Resolves to true if gapi.client is ready, false otherwise.
+// Reuses an already-loaded gapi (e.g. from a previous signIn attempt)
+// and retries the <script> load once before giving up.
 function loadGapi() {
-  return new Promise(res => {
-    const s = document.createElement('script');
-    s.src = 'https://apis.google.com/js/api.js';
-    s.onload = () => gapi.load('client', async () => {
-      // Try full init (Sheets + Calendar) first.
-      try {
-        await gapi.client.init({ apiKey: API_KEY, discoveryDocs: DISCOVERY });
-        calendarReady = !!(gapi.client && gapi.client.calendar);
-      } catch (e) {
-        console.warn('gapi.client.init full failed, retrying with Sheets only:', e);
-        // Retry with just the core (Sheets) discovery so the app can still load.
-        try {
-          await gapi.client.init({ apiKey: API_KEY, discoveryDocs: [DISCOVERY[0]] });
-        } catch (e2) {
-          console.error('gapi.client.init failed entirely:', e2);
-        }
-        calendarReady = false;
-      }
-      res();
+  return new Promise(async (res) => {
+    if (gapiInited && window.gapi && window.gapi.client) return res(true);
+    if (window.gapi && typeof window.gapi.load === 'function') {
+      gapi.load('client', async () => res(await _initGapiClient()));
+      return;
+    }
+    const tryLoadScript = () => new Promise(r => {
+      const s = document.createElement('script');
+      s.src = 'https://apis.google.com/js/api.js';
+      s.onload = () => r(true);
+      s.onerror = () => r(false);
+      document.head.appendChild(s);
     });
-    s.onerror = () => { console.error('Failed to load apis.google.com/js/api.js'); res(); };
-    document.head.appendChild(s);
+    let loaded = await tryLoadScript();
+    if (!loaded) {
+      console.warn('apis.google.com/js/api.js failed, retrying once...');
+      await new Promise(r => setTimeout(r, 600));
+      loaded = await tryLoadScript();
+    }
+    if (!loaded || !window.gapi || typeof window.gapi.load !== 'function') {
+      console.error('Could not load apis.google.com/js/api.js');
+      return res(false);
+    }
+    gapi.load('client', async () => res(await _initGapiClient()));
   });
 }
 
+let gisInited = false;
+
 function loadGis() {
-  return new Promise(res => {
-    const s = document.createElement('script');
-    s.src = 'https://accounts.google.com/gsi/client';
-    s.onload = () => {
+  return new Promise(async (res) => {
+    const setupTokenClient = () => {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
@@ -635,9 +660,29 @@ function loadGis() {
           }
         }
       });
-      res();
+      gisInited = true;
     };
-    document.head.appendChild(s);
+    if (gisInited && window.google?.accounts?.oauth2) return res(true);
+    if (window.google?.accounts?.oauth2) { setupTokenClient(); return res(true); }
+    const tryLoadScript = () => new Promise(r => {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = () => r(true);
+      s.onerror = () => r(false);
+      document.head.appendChild(s);
+    });
+    let loaded = await tryLoadScript();
+    if (!loaded) {
+      console.warn('accounts.google.com/gsi/client failed, retrying once...');
+      await new Promise(r => setTimeout(r, 600));
+      loaded = await tryLoadScript();
+    }
+    if (!loaded || !window.google?.accounts?.oauth2) {
+      console.error('Could not load accounts.google.com/gsi/client');
+      return res(false);
+    }
+    setupTokenClient();
+    res(true);
   });
 }
 
@@ -896,15 +941,27 @@ function openCreateClientContactUserModal(contactoNombre, contactoId) {
 
 async function signIn() {
   const statusEl = document.getElementById('auth-status');
+  statusEl.style.color = '';
   statusEl.textContent = 'Connecting to Google...';
   try {
-    await loadGapi();
+    const gapiOk = await loadGapi();
+    if (!gapiOk) {
+      statusEl.style.color = '#a83838';
+      statusEl.textContent = 'No se pudo cargar la API de Google (apis.google.com). Revisa tu conexión o desactiva bloqueadores/anti-tracking y vuelve a intentar.';
+      return;
+    }
     statusEl.textContent = 'Requesting access...';
-    await loadGis();
+    const gisOk = await loadGis();
+    if (!gisOk) {
+      statusEl.style.color = '#a83838';
+      statusEl.textContent = 'No se pudo cargar Google Identity (accounts.google.com). Revisa tu conexión o desactiva bloqueadores/anti-tracking y vuelve a intentar.';
+      return;
+    }
     statusEl.textContent = 'A Google popup will open — allow access';
     tokenClient.requestAccessToken({ prompt: 'consent' });
   } catch(e) {
-    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.style.color = '#a83838';
+    statusEl.textContent = 'Error: ' + (e.message || e);
   }
 }
 
