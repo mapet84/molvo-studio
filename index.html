@@ -2111,10 +2111,12 @@ function calcEstimatedDelivery() {
   if (!startVal) { if(outEl) outEl.textContent='Selecciona fecha de inicio'; return; }
 
   const tipo = typeEl ? typeEl.value : '';
-  // Get tasks from tipo template or standard
+  // Get tasks STRICTLY from the configured tipo. Only fall back to the
+  // catalog/standard list when the type isn't defined at all.
   let tasks = [];
-  if (tipoTasks && tipoTasks[tipo] && tipoTasks[tipo].length) {
-    tasks = tipoTasks[tipo];
+  const tipoKey = findTipoKey(tipo);
+  if (tipoKey !== null) {
+    tasks = tipoTasks[tipoKey] || [];
   } else if (catalogTareas && catalogTareas.length) {
     tasks = catalogTareas;
   } else {
@@ -2194,18 +2196,22 @@ async function createProject() {
   // Tasks come ONLY from the template defined for this project's tipo
   // (phase assignment lives on the project type now, not the catalog).
   if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
-  const tipo = proj.tipo;
+  const tipoKey = findTipoKey(proj.tipo);
   let activeTasks;
-  if (tipoTasks[tipo] && tipoTasks[tipo].length) {
-    activeTasks = tipoTasks[tipo];
-  } else if (templateTasks) {
-    activeTasks = templateTasks;
+  if (tipoKey !== null) {
+    // The type IS configured — use its tasks exactly as defined,
+    // even if the user intentionally left it short or empty.
+    activeTasks = tipoTasks[tipoKey] || [];
+    // Normalize the stored tipo to the canonical key so future lookups
+    // (e.g. when listing/filtering) match without going through findTipoKey.
+    if (proj.tipo !== tipoKey) proj.tipo = tipoKey;
+    if (!activeTasks.length) {
+      showToast('El tipo "'+proj.tipo+'" no tiene tareas configuradas. El proyecto se creó sin tareas.', 'info');
+    }
   } else {
-    activeTasks = STANDARD_TASKS;
-  }
-  if (!activeTasks || !activeTasks.length) {
-    showToast('El tipo "'+(tipo||'—')+'" no tiene tareas configuradas. Configúralo en Tipos de proyecto.', 'error');
-    return;
+    // Truly unknown type — fall back to a usable template and warn the user.
+    showToast('El tipo "'+proj.tipo+'" no está configurado en Tipos de proyecto. Usando plantilla estándar.', 'error');
+    activeTasks = templateTasks || STANDARD_TASKS;
   }
 
   const taskRows = [];
@@ -2234,12 +2240,16 @@ async function createProject() {
     }
   }
   // Single batch write for all tasks, then chunks for all fields
-  showToast('Guardando tareas en Google Sheets...', 'info');
-  try { await sheetsBatchAppend('tareas', taskRows); } catch(e) { console.warn('tareas batch warn:', e); }
-  showToast('Guardando campos...', 'info');
-  const chunkSize = 40;
-  for (let i = 0; i < fieldRows.length; i += chunkSize) {
-    try { await sheetsBatchAppend('campos_tarea', fieldRows.slice(i, i + chunkSize)); } catch(e) { console.warn('campos batch warn:', e); }
+  if (taskRows.length) {
+    showToast('Guardando tareas en Google Sheets...', 'info');
+    try { await sheetsBatchAppend('tareas', taskRows); } catch(e) { console.warn('tareas batch warn:', e); }
+  }
+  if (fieldRows.length) {
+    showToast('Guardando campos...', 'info');
+    const chunkSize = 40;
+    for (let i = 0; i < fieldRows.length; i += chunkSize) {
+      try { await sheetsBatchAppend('campos_tarea', fieldRows.slice(i, i + chunkSize)); } catch(e) { console.warn('campos batch warn:', e); }
+    }
   }
   renderProjectSelector();
   renderOverview();
@@ -2584,6 +2594,22 @@ function getProjectTypes() {
 
 // Tipo tasks: same 7-phase structure but stored per type
 let tipoTasks = JSON.parse(localStorage.getItem('molvo_tipo_tasks') || 'null') || null;
+
+// Resolve a project's `tipo` string to the actual key in tipoTasks,
+// tolerating differences in accents, case and surrounding whitespace
+// (legacy data may have been saved with the old hardcoded options like
+// "Producción Audiovisual" while tipoTasks is keyed "Produccion Audiovisual").
+// Returns null only when the type genuinely has no matching template.
+function findTipoKey(tipo) {
+  if (!tipoTasks || !tipo) return null;
+  if (Object.prototype.hasOwnProperty.call(tipoTasks, tipo)) return tipo;
+  const norm = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  const target = norm(tipo);
+  for (const k of Object.keys(tipoTasks)) {
+    if (norm(k) === target) return k;
+  }
+  return null;
+}
 
 function getDefaultTipoTasks() {
   // All types start with same standard tasks but can be customized
