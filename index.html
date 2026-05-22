@@ -570,7 +570,7 @@ const ALL_ROLES = ['Ventas','Creativo','Productor Ejecutivo','Asistente de Direc
 
 // ----------------------------------------
 let tokenClient, accessToken;
-let DB = { proyectos:[], tareas:[], campos_tarea:[], clientes:[], contactos_cliente:[], accionables_pago:[], usuarios:[], asignaciones:[], catalogo_tareas:[], catalogo_campos:[] };
+let DB = { proyectos:[], tareas:[], campos_tarea:[], clientes:[], contactos_cliente:[], accionables_pago:[], usuarios:[], asignaciones:[], catalogo_tareas:[], catalogo_campos:[], recursos_tarea:[] };
 let activeProjectId = null, activeTaskId = null, activeFieldKey = null;
 let selectedClientId = null;
 
@@ -1220,6 +1220,7 @@ const SHEET_HEADERS = {
   asignaciones:   ['id','tarea_id','usuario_id','proyecto_id','fecha_inicio','fecha_fin'],
   catalogo_tareas: ['id','fase','nombre','rol_molvo','rol_cliente','duracion_dias','descripcion','creado_en'],
   catalogo_campos: ['id','catalogo_tarea_id','label','tipo','requerido','opciones'],
+  recursos_tarea:  ['id','tarea_id','nombre','email','telefono','rol','creado_en'],
 };
 
 async function initSheetStructure(silent=false) {
@@ -1398,7 +1399,7 @@ function addD(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r;
 function fmt(d) { return new Date(d).toLocaleDateString('es-MX',{day:'2-digit',month:'short'}); }
 
 function taskRow(t, phColor, pStart) {
-  const u = DB.usuarios.find(u => u.id === t.usuario_id);
+  const u = getPrimaryAssignedUser(t);
   const sd = addD(pStart, parseInt(t.start_day)||0);
   const ed = addD(pStart, (parseInt(t.start_day)||0) + hoursToDays(parseInt(t.duracion)||8));
   const isActive = activeTaskId === t.id;
@@ -1603,11 +1604,14 @@ async function saveAcdonables(clienteId) {
 // ─── BILLING HITO: auto-create cobro task when accionable task completes ──────
 async function createBillingHito(task, proj, billing, client) {
   const now = new Date().toISOString();
-  // Calculate due date: task end date + client payment days
-  const pStart = new Date(proj.fecha_inicio||'2025-01-01');
-  const taskEndDay = (parseInt(task.start_day)||0) + hoursToDays(parseInt(task.duracion)||8);
-  const taskEndDate = new Date(pStart.getTime() + taskEndDay*864e5);
-  const dueDate = new Date(taskEndDate);
+  // Anchor the cobranza on the ACTUAL completion date (now), not on the
+  // planned end date of the triggering task. If a task finishes late or
+  // early, the payment window should track the real-world event.
+  const [py, pm, pd] = (proj.fecha_inicio||'2025-01-01').split('-').map(Number);
+  const pStart = new Date(py, pm-1, pd);
+  const completionDate = new Date(); completionDate.setHours(0,0,0,0);
+  const daysFromStart = Math.max(0, Math.round((completionDate - pStart)/(1000*60*60*24)));
+  const dueDate = new Date(completionDate);
   dueDate.setDate(dueDate.getDate() + parseInt(client.dias_pago||30));
   const dueDateStr = dueDate.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
 
@@ -1624,8 +1628,9 @@ async function createBillingHito(task, proj, billing, client) {
   const hitoNombre = 'Cobro por ' + billing.label;
   const hitoId = genId();
 
-  // Place hito right after the triggering task (same start_day + duration)
-  const hitoStartDay = taskEndDay;
+  // Place hito at the actual completion day (relative to project start),
+  // running for the client's payment-terms window.
+  const hitoStartDay = daysFromStart;
 
   const hito = {
     id: hitoId,
@@ -1740,7 +1745,8 @@ function openTask(taskId) {
   if (!task) return;
   const proj = DB.proyectos.find(p => p.id === task.proyecto_id);
   const client = proj ? DB.clientes.find(c => c.id === proj.cliente_id) : null;
-  const u = DB.usuarios.find(u => u.id === task.usuario_id);
+  const u = getPrimaryAssignedUser(task);
+  const assignedUsers = getAssignedUsersForTask(task);
   const pStart = new Date(proj?.fecha_inicio || '2025-01-01');
   const sd = addD(pStart, parseInt(task.start_day)||0);
   const ed = addD(pStart, (parseInt(task.start_day)||0)+hoursToDays(parseInt(task.duracion)||8));
@@ -1863,6 +1869,14 @@ function openTask(taskId) {
       <button class="complete-btn ${btnClass}" onclick="tryComplete('${task.id}','${phColor}')" style="flex:1">${btnLabel}</button>
       <button onclick="openEditTaskModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--border);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--gray)">✎ Editar</button>
       ${(()=>{const catTask=catalogTareas?catalogTareas.find(ct=>ct.nombre===task.nombre):null; const showCita=!catTask||catTask.habilitar_cita!==false; const showMail=!catTask||catTask.habilitar_email!==false; return (showCita?`<button onclick="openCalendarInviteModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">📅 Cita</button>`:'')+(showMail?`<button onclick="openEmailModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">✉ Correo</button>`:'')})()} 
+    </div>
+
+    <div style="margin-top:14px;padding-top:14px;border-top:0.5px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Recursos extra <span style="color:var(--lgray);text-transform:none;letter-spacing:0;font-size:10px">(no usuarios del sistema — se incluyen en cita y correo)</span></div>
+        <button onclick="openTaskExtraModal('${task.id}')" style="padding:3px 9px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;color:var(--gray)">+ Agregar</button>
+      </div>
+      ${renderTaskExtrasList(task.id)}
     </div>`;
 
   wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -1936,7 +1950,9 @@ function getUserLoad(uid, s, e) {
   const total = calcBD(start, end);
   let used = 0; const projs = [];
   DB.tareas.forEach(t => {
-    if (t.usuario_id !== uid) return;
+    // Check every role slot (comma-separated for multi-role tasks).
+    const slotIds = (t.usuario_id || '').split(',').map(x => x.trim());
+    if (!slotIds.includes(uid)) return;
     const pr = DB.proyectos.find(p => p.id === t.proyecto_id);
     if (!pr) return;
     const ps = new Date(pr.fecha_inicio||'2025-01-01');
@@ -1952,21 +1968,286 @@ function getUserLoad(uid, s, e) {
   return {total, used, pct: total>0?Math.min(100,Math.round(used/total*100)):0, projs};
 }
 
+// ── Multi-role assignment helpers ────────────────────────────────────
+// A task can have multiple roles (e.g. "Director, Responsable de
+// Proyecto"). usuario_id stores the same number of comma-separated IDs
+// aligned by position; an empty slot is "". Single-role tasks have no
+// comma in either field and keep working exactly like before.
+function normRoleStr(s) {
+  return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
+function getTaskRolesList(task) {
+  if (!task || !task.rol) return [];
+  return task.rol.split(',').map(r => r.trim()).filter(Boolean);
+}
+function getTaskAssignedIds(task, overrideStr) {
+  // Returns array aligned with getTaskRolesList(task). Empty slot = ''.
+  const roles = getTaskRolesList(task);
+  const raw = (overrideStr != null ? overrideStr : (task?.usuario_id || ''));
+  const ids = raw.split(',').map(s => s.trim());
+  while (ids.length < roles.length) ids.push('');
+  return ids.slice(0, Math.max(1, roles.length));
+}
+function joinAssignedIds(ids) {
+  return ids.map(s => (s||'').trim()).join(',');
+}
+function getUserRolesList(user) {
+  return (user?.roles||'').split(',').map(r => r.trim()).filter(Boolean);
+}
+function userCoversRole(user, role) {
+  if (!user || !role) return false;
+  const target = normRoleStr(role);
+  return getUserRolesList(user).some(r => normRoleStr(r) === target);
+}
+// Returns the array of usuario objects assigned to a task (one per
+// role slot; nulls dropped). Used by Cita/Correo/task-detail consumers.
+function getAssignedUsersForTask(task) {
+  const ids = getTaskAssignedIds(task);
+  return ids.map(id => id ? DB.usuarios.find(u => u.id === id) : null).filter(Boolean);
+}
+// "Primary" responsable for single-avatar displays: first non-empty id.
+function getPrimaryAssignedUser(task) {
+  const ids = getTaskAssignedIds(task);
+  for (const id of ids) {
+    if (id) {
+      const u = DB.usuarios.find(u => u.id === id);
+      if (u) return u;
+    }
+  }
+  return null;
+}
+// Build a {role → userId} map from already-assigned tasks in this
+// project so the resource modal can pre-fill recurring roles (e.g. the
+// same Director across every task that needs Director).
+function buildProjectRoleAssignmentMap(proyId, currentPending) {
+  const map = {};
+  const projTasks = DB.tareas.filter(t => t.proyecto_id === proyId);
+  for (const t of projTasks) {
+    const roles = getTaskRolesList(t);
+    const pendOverride = currentPending && currentPending[t.id];
+    const ids = getTaskAssignedIds(t, pendOverride);
+    roles.forEach((r, i) => {
+      const norm = normRoleStr(r);
+      if (ids[i] && !map[norm]) map[norm] = { role: r, userId: ids[i] };
+    });
+  }
+  return map;
+}
+
+// Open the standard resource creation form but pre-fill the role from
+// the currently selected task and restore the resource-assignment modal
+// once the user saves or cancels.
+function openQuickCreateResourceForTask(taskId) {
+  const task = DB.tareas.find(t => t.id === taskId);
+  const suggestedRole = task ? task.rol : '';
+  const proyId = currentResProjId;
+  const mode = currentResMode;
+  const colors = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">+ Nuevo recurso</div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:12px">El rol se pre-llenó con "${suggestedRole}" para que aparezca como candidato a esta tarea. Puedes agregar más roles separados por coma.</div>
+    <div class="form-grid">
+      <div class="form-group"><label class="flabel">Nombre completo</label><input class="finput" id="nu-name" placeholder="Nombre y apellido"></div>
+      <div class="form-group"><label class="flabel">Iniciales</label><input class="finput" id="nu-ini" maxlength="2" placeholder="AM"></div>
+      <div class="form-group full"><label class="flabel">Roles (separados por coma)</label><input class="finput" id="nu-roles" value="${suggestedRole}" placeholder="Ventas, Director"></div>
+      <div class="form-group"><label class="flabel">Email</label><input class="finput" id="nu-email" type="email"></div>
+      <div class="form-group"><label class="flabel">Teléfono</label><input class="finput" id="nu-tel"></div>
+      <div class="form-group"><label class="flabel">WhatsApp</label><input class="finput" id="nu-wa"></div>
+      <div class="form-group"><label class="flabel">Color</label><select class="fselect" id="nu-color">${colors.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="openResourceAssignmentModal('${proyId}','${mode}')">Cancelar</button>
+      <button class="btn-primary" onclick="saveResourceAndReturnToResModal('${proyId}','${mode}','${taskId}')">Guardar y volver</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('nu-name')?.focus(), 50);
+}
+
+async function saveResourceAndReturnToResModal(proyId, mode, taskId) {
+  const name = document.getElementById('nu-name').value.trim();
+  if (!name) { showToast('Nombre obligatorio','error'); return; }
+  const id = genId();
+  const user = {
+    id, nombre: name,
+    iniciales: document.getElementById('nu-ini').value || name.substring(0,2).toUpperCase(),
+    roles: document.getElementById('nu-roles').value,
+    email: document.getElementById('nu-email').value,
+    telefono: document.getElementById('nu-tel').value,
+    whatsapp: document.getElementById('nu-wa').value,
+    color: document.getElementById('nu-color').value,
+    activo: 'true'
+  };
+  const values = SHEET_HEADERS.usuarios.map(h => user[h] || '');
+  const ok = await sheetsAppend('usuarios', values);
+  if (!ok) { showToast('Error al guardar','error'); return; }
+  DB.usuarios.push(user);
+  showToast('Recurso "'+name+'" creado ✓','success');
+  // Reopen the resource modal then route the new user through the
+  // proper assign flow so multi-role tasks pick the correct slot.
+  setTimeout(() => {
+    openResourceAssignmentModal(proyId, mode);
+    currentResTask = taskId;
+    selectResTask(taskId);
+    assignResUser(taskId, id);
+  }, 50);
+}
+
+// ── Responsable de Proyecto ──────────────────────────────────────────
+// Returns users whose `roles` field contains "Responsable de Proyecto"
+// (case/accent insensitive). These are the candidates that can be
+// assigned as project responsable in the Nuevo Proyecto modal.
+function getResponsableCandidates() {
+  const norm = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const target = norm('Responsable de Proyecto');
+  return (DB.usuarios || []).filter(u => {
+    if (u.activo === 'false') return false;
+    const roles = (u.roles||'').split(',').map(r => norm(r.trim()));
+    return roles.includes(target);
+  });
+}
+
+// Monthly utilization table for every Responsable candidate, covering
+// the next 6 months from today (or from the project start if set).
+let _npFormCache = null;
+function captureNpForm() {
+  const g = id => document.getElementById(id)?.value ?? '';
+  _npFormCache = {
+    name: g('np-name'), client: g('np-client'), end: g('np-end'),
+    start: g('np-start'), budget: g('np-budget'), type: g('np-type'),
+    responsable: g('np-responsable'), status: g('np-status'), desc: g('np-desc')
+  };
+}
+function returnToNewProjectFromUtil() {
+  openNewProjectModal();
+  setTimeout(() => {
+    if (!_npFormCache) return;
+    const s = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.value = v; };
+    s('np-name', _npFormCache.name); s('np-client', _npFormCache.client);
+    s('np-end', _npFormCache.end); s('np-start', _npFormCache.start);
+    s('np-budget', _npFormCache.budget); s('np-type', _npFormCache.type);
+    s('np-responsable', _npFormCache.responsable); s('np-status', _npFormCache.status);
+    s('np-desc', _npFormCache.desc);
+    _npFormCache = null;
+    if (typeof calcStartFromDeadline === 'function') calcStartFromDeadline();
+  }, 30);
+}
+
+function openResponsableUtilizationModal() {
+  captureNpForm();
+  const candidates = getResponsableCandidates();
+  // Anchor the window on the project's suggested start when available,
+  // otherwise today. This way utilization shown matches the period
+  // that will actually consume capacity.
+  const startInput = document.getElementById('np-start')?.value;
+  const anchor = (() => {
+    if (startInput) {
+      const [y,m,d] = startInput.split('-').map(Number);
+      return new Date(y, m-1, d);
+    }
+    const t = new Date(); t.setHours(0,0,0,0); return t;
+  })();
+  // Build 6 month windows starting at anchor's month
+  const months = [];
+  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  for (let i = 0; i < 6; i++) {
+    const start = new Date(first.getFullYear(), first.getMonth()+i, 1);
+    const end = new Date(first.getFullYear(), first.getMonth()+i+1, 0); // last day of month
+    months.push({
+      label: start.toLocaleDateString('es-MX', {month:'short', year:'2-digit'}),
+      ss: ymdLocal(start),
+      es: ymdLocal(end)
+    });
+  }
+  const cellFor = (uid, m) => {
+    const load = getUserLoad(uid, m.ss, m.es);
+    const pct = load.pct || 0;
+    const color = pct >= 90 ? 'var(--red)' : pct >= 70 ? 'var(--warn)' : pct >= 30 ? 'var(--gray)' : 'var(--green)';
+    const bg = pct >= 90 ? '#a8383815' : pct >= 70 ? '#c4892a18' : 'transparent';
+    return `<td style="padding:8px 6px;text-align:center;background:${bg}">
+      <div style="font-family:'Cormorant Garamond',serif;font-size:16px;color:${color}">${pct}%</div>
+      <div style="font-size:9px;color:var(--lgray)">${load.used}/${load.total}d</div>
+    </td>`;
+  };
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">📊 Utilización por mes — Responsables</div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:12px">Carga de trabajo de los posibles responsables durante los próximos 6 meses${startInput?', comenzando desde la fecha de inicio sugerida del proyecto.':' a partir de hoy.'} Verde = baja, gris = moderada, ámbar = alta, rojo = saturado.</div>
+    ${candidates.length ? `
+      <div style="overflow-x:auto;border:0.5px solid var(--border);border-radius:6px">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:520px">
+          <thead style="background:var(--cream);border-bottom:0.5px solid var(--border)">
+            <tr>
+              <th style="text-align:left;padding:10px;font-weight:400;color:var(--gray);font-size:10px;letter-spacing:0.06em;text-transform:uppercase">Responsable</th>
+              ${months.map(m => `<th style="padding:10px 6px;font-weight:400;color:var(--gray);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;text-align:center">${m.label}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${candidates.map(u => `<tr style="border-top:0.5px solid var(--border)">
+              <td style="padding:10px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="width:26px;height:26px;border-radius:50%;background:${u.color||'#888'}22;color:${u.color||'#888'};display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0">${u.iniciales}</div>
+                  <div>
+                    <div style="font-size:11px">${u.nombre}</div>
+                    <div style="font-size:9px;color:var(--gray)">${u.roles||''}</div>
+                  </div>
+                </div>
+              </td>
+              ${months.map(m => cellFor(u.id, m)).join('')}
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : `<div style="padding:24px;text-align:center;color:var(--gray);font-size:12px">No hay usuarios con rol "Responsable de Proyecto" registrados.</div>`}
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="returnToNewProjectFromUtil()">Volver a Nuevo Proyecto</button>
+    </div>`;
+  document.getElementById('modal-body').classList.add('wide');
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
 function openResourceAssignmentModal(proyId, mode) {
+  // Preserve any in-progress pending assignments if reopening the same
+  // project/mode (e.g. after the "+ Recurso nuevo" round-trip).
+  const reopeningSame = (currentResProjId === proyId && currentResMode === mode);
   currentResProjId = proyId;
   currentResMode = mode;
-  pendingAssignments = {};
+  if (!reopeningSame) pendingAssignments = {};
   const proj = DB.proyectos.find(p=>p.id===proyId);
   if (!proj) return;
   const fases = mode==='early' ? FASES_EARLY : FASES_LATE;
   const tasks = DB.tareas.filter(t=>t.proyecto_id===proyId && fases.includes(t.fase));
+
+  // Cross-task auto-fill: scan every task in the project to see which
+  // roles are already covered (saved on the task OR pending from this
+  // session) and pre-fill any unfilled matching role on tasks in this
+  // modal. So once Director is set on one task, every other task that
+  // also needs Director starts pre-assigned — the user doesn't have to
+  // repeat the choice.
+  const roleMap = buildProjectRoleAssignmentMap(proyId, pendingAssignments);
+  for (const t of tasks) {
+    const roles = getTaskRolesList(t);
+    const ids = getTaskAssignedIds(t, pendingAssignments[t.id]);
+    let changed = false;
+    roles.forEach((r, i) => {
+      if (!ids[i]) {
+        const hit = roleMap[normRoleStr(r)];
+        if (hit) {
+          // Only propagate if the candidate user actually still covers
+          // this role (defensive against stale data).
+          const u = DB.usuarios.find(u => u.id === hit.userId);
+          if (u && userCoversRole(u, r)) { ids[i] = hit.userId; changed = true; }
+        }
+      }
+    });
+    if (changed) pendingAssignments[t.id] = joinAssignedIds(ids);
+  }
+
   currentResTask = tasks[0]?.id || null;
 
   const title = mode==='early'
     ? 'Asignar responsables — Fases 1 a 3'
     : 'Proyecto aprobado — Asignar responsables Fases 4 a 7';
   const subtitle = mode==='early'
-    ? 'Asigna un responsable a cada tarea de Brief, Conceptualización y Aprobación.'
+    ? 'Asigna un responsable a cada tarea de Brief, Conceptualización y Aprobación. Los roles ya asignados se propagan automáticamente a las tareas que los necesitan.'
     : 'Las fases 1-3 están completas. Asigna recursos para producción y post-producción.';
 
   document.getElementById('modal-body').innerHTML = `
@@ -1996,15 +2277,27 @@ function renderResTaskList(tasks) {
   if (!el) return;
   el.innerHTML = `<div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:8px">Tareas</div>` +
     tasks.map(t => {
-      const assigned = pendingAssignments[t.id] || t.usuario_id;
-      const u = DB.usuarios.find(u=>u.id===assigned);
+      const roles = getTaskRolesList(t);
+      const ids = getTaskAssignedIds(t, pendingAssignments[t.id]);
+      const filledCount = ids.filter(Boolean).length;
+      const totalRoles = Math.max(1, roles.length);
+      const allFilled = totalRoles > 0 && filledCount >= totalRoles;
+      const noneFilled = filledCount === 0;
+      // Find a representative user to show in the avatar (first filled).
+      const repId = ids.find(Boolean);
+      const u = repId ? DB.usuarios.find(u=>u.id===repId) : null;
       const isActive = currentResTask===t.id;
+      const indicator = allFilled
+        ? (u ? `<div style="width:22px;height:22px;border-radius:50%;background:${u.color||'#888'}22;color:${u.color||'#888'};display:flex;align-items:center;justify-content:center;font-size:8px;flex-shrink:0">${u.iniciales}</div>` : '<div style="width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0"></div>')
+        : noneFilled
+          ? '<div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0"></div>'
+          : `<div style="font-size:9px;color:var(--warn);font-family:'DM Mono',monospace;flex-shrink:0">${filledCount}/${totalRoles}</div>`;
       return `<div onclick="selectResTask('${t.id}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:0.5px solid ${isActive?'var(--black)':'var(--border)'};border-radius:6px;margin-bottom:5px;cursor:pointer;background:${isActive?'var(--cream)':'transparent'}">
         <div style="flex:1;min-width:0">
           <div style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.nombre}</div>
-          <div style="font-size:10px;color:var(--gray)">${t.fase}</div>
+          <div style="font-size:10px;color:var(--gray)">${t.fase}${roles.length>1?` · ${roles.length} roles`:''}</div>
         </div>
-        ${u ? `<div style="width:22px;height:22px;border-radius:50%;background:${u.color||'#888'}22;color:${u.color||'#888'};display:flex;align-items:center;justify-content:center;font-size:8px;flex-shrink:0">${u.iniciales}</div>` : '<div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0"></div>'}
+        ${indicator}
       </div>`;
     }).join('');
 }
@@ -2021,27 +2314,54 @@ function renderResUserList(taskId, proj) {
   const es = ed.toISOString().split('T')[0];
   const fmtD = d => new Date(d).toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
 
-  // Eligible: match rol loosely
-  const eligible = DB.usuarios.filter(u => {
-    const roles = (u.roles||'').split(',').map(r=>r.trim().toLowerCase());
-    const taskRol = task.rol.toLowerCase();
-    return roles.some(r => r && (taskRol.includes(r) || r.includes(taskRol) || r===taskRol));
-  });
+  // Build the union of all task roles (1 for single-role, 2+ for combo)
+  // and intersect with each user's roles to determine eligibility.
+  const taskRoles = getTaskRolesList(task);
+  const currentIds = getTaskAssignedIds(task, pendingAssignments[taskId]);
+
+  // Eligible: user covers at least ONE of the task's roles.
+  const eligible = DB.usuarios.filter(u => taskRoles.some(r => userCoversRole(u, r)));
   const others = DB.usuarios.filter(u=>!eligible.find(e=>e.id===u.id));
 
   if (!eligible.length && !others.length) {
-    el.innerHTML = `<div style="font-size:11px;color:var(--gray);padding:20px 0">Sin usuarios registrados. Agrega usuarios en Configuración.</div>`;
+    el.innerHTML = `
+      <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span>Rol: "${task.rol}" · ${fmtD(ss)} → ${fmtD(es)}</span>
+        <button onclick="openQuickCreateResourceForTask('${taskId}')" style="padding:3px 9px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:9px;cursor:pointer;color:var(--gray);text-transform:none;letter-spacing:0">+ Recurso nuevo</button>
+      </div>
+      <div style="font-size:11px;color:var(--gray);padding:20px 0">Sin usuarios registrados todavía. Crea uno con el botón "+ Recurso nuevo" arriba o desde Configuración → Usuarios.</div>`;
     return;
   }
 
   const withLoad = [...eligible.map(u=>({...u,...getUserLoad(u.id,ss,es),match:true})), ...others.map(u=>({...u,...getUserLoad(u.id,ss,es),match:false}))].sort((a,b)=>(a.match===b.match?a.pct-b.pct:a.match?-1:1));
   const rec = withLoad.find(u=>u.match) || withLoad[0];
-  const assigned = pendingAssignments[taskId] || task.usuario_id;
 
-  el.innerHTML = `<div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px">Rol: "${task.rol}" · ${fmtD(ss)} → ${fmtD(es)}</div>` +
+  // Per-role chips at the top: one row per role, showing the current
+  // assignment (with a ✕ to clear it) so the user sees the multi-role
+  // structure of this task clearly.
+  const roleRowsHtml = taskRoles.length ? `
+    <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px;padding:8px 10px;background:var(--cream);border-radius:6px">
+      ${taskRoles.map((r, i) => {
+        const uid = currentIds[i] || '';
+        const u = uid ? DB.usuarios.find(u => u.id === uid) : null;
+        return `<div style="display:flex;align-items:center;gap:8px;font-size:11px">
+          <div style="font-size:9px;color:var(--gray);letter-spacing:0.06em;text-transform:uppercase;min-width:62px">Rol ${taskRoles.length>1?(i+1):''}</div>
+          <div style="flex:1;font-size:11px">${r}</div>
+          ${u
+            ? `<div style="display:flex;align-items:center;gap:6px"><div style="width:20px;height:20px;border-radius:50%;background:${u.color||'#888'}22;color:${u.color||'#888'};display:flex;align-items:center;justify-content:center;font-size:8px">${u.iniciales}</div><span style="font-size:10px">${u.nombre}</span><button onclick="clearResRoleAssignment('${taskId}',${i})" title="Quitar" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:13px;padding:0 4px">✕</button></div>`
+            : `<span style="font-size:10px;color:var(--lgray);font-style:italic">Sin asignar</span>`}
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  el.innerHTML = `<div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <span>${taskRoles.length>1?`${taskRoles.length} roles`:`Rol: "${task.rol}"`} · ${fmtD(ss)} → ${fmtD(es)}</span>
+      <button onclick="openQuickCreateResourceForTask('${taskId}')" style="padding:3px 9px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:9px;cursor:pointer;color:var(--gray);text-transform:none;letter-spacing:0">+ Recurso nuevo</button>
+    </div>
+    ${roleRowsHtml}` +
     withLoad.map(u => {
       const isRec = u.id===rec?.id && u.match;
-      const isSel = assigned===u.id;
+      const isSel = currentIds.includes(u.id);
       const isOver = u.pct>=90;
       const bc = isOver?'var(--red)':isRec?'var(--green)':'var(--blue)';
       const taskDetailHtml = u.projs.length
@@ -2076,23 +2396,170 @@ function selectResTask(taskId) {
   renderResUserList(taskId, proj);
 }
 
+// After any role gets assigned on one task, look at every OTHER task
+// in the project that still has that role unfilled and the candidate
+// can cover. Pre-fill those slots so the user doesn't repeat the choice.
+function propagateRoleInModal(roleName, userId) {
+  if (!roleName || !userId) return;
+  const u = DB.usuarios.find(u => u.id === userId);
+  if (!u || !userCoversRole(u, roleName)) return;
+  const target = normRoleStr(roleName);
+  const projTasks = DB.tareas.filter(t => t.proyecto_id === currentResProjId);
+  for (const t of projTasks) {
+    const roles = getTaskRolesList(t);
+    const ids = getTaskAssignedIds(t, pendingAssignments[t.id]);
+    let changed = false;
+    roles.forEach((r, i) => {
+      if (!ids[i] && normRoleStr(r) === target) { ids[i] = userId; changed = true; }
+    });
+    if (changed) pendingAssignments[t.id] = joinAssignedIds(ids);
+  }
+}
+
+// Clicking a candidate: figure out which role slot they should fill.
+// - If they cover exactly ONE of the task's roles → fill that one.
+// - If multiple match → ask which role they're being assigned to.
+// - If they're already assigned to a slot, clicking again removes them.
 function assignResUser(taskId, userId) {
-  pendingAssignments[taskId] = userId;
+  const task = DB.tareas.find(t=>t.id===taskId);
+  if (!task) return;
+  const roles = getTaskRolesList(task);
+  const ids = getTaskAssignedIds(task, pendingAssignments[taskId]);
+  const user = DB.usuarios.find(u => u.id === userId);
+  if (!user) return;
+
+  // Already assigned somewhere on this task → toggle off.
+  const existingIdx = ids.indexOf(userId);
+  if (existingIdx >= 0) {
+    ids[existingIdx] = '';
+    pendingAssignments[taskId] = joinAssignedIds(ids);
+    rerenderResModal();
+    return;
+  }
+
+  // Roles on this task that the user covers AND that aren't filled yet.
+  const candidateRoleIdxs = roles
+    .map((r, i) => ({ r, i }))
+    .filter(({r, i}) => !ids[i] && userCoversRole(user, r))
+    .map(({i}) => i);
+
+  if (candidateRoleIdxs.length === 1) {
+    const idx = candidateRoleIdxs[0];
+    ids[idx] = userId;
+    pendingAssignments[taskId] = joinAssignedIds(ids);
+    propagateRoleInModal(roles[idx], userId);
+    rerenderResModal();
+    autoAdvanceAfterAssign(taskId);
+    return;
+  }
+
+  if (candidateRoleIdxs.length === 0) {
+    // No role match — let the user override by choosing which slot.
+    // Prefer unfilled slots; if all filled, offer to replace.
+    const slotOptions = roles
+      .map((r, i) => ({ r, i, filled: !!ids[i] }))
+      .filter(o => !o.filled);
+    if (slotOptions.length === 0) {
+      // All slots filled → present full list as replacement targets.
+      openRoleChoiceDialog(taskId, userId, roles.map((r,i)=>({r,i,filled:true})));
+      return;
+    }
+    openRoleChoiceDialog(taskId, userId, slotOptions);
+    return;
+  }
+
+  // Multiple matching roles → ask.
+  openRoleChoiceDialog(taskId, userId, candidateRoleIdxs.map(i => ({ r: roles[i], i, filled: !!ids[i] })));
+}
+
+// Inline dialog with one button per role choice. Sits on top of the
+// resource modal without replacing its contents.
+function openRoleChoiceDialog(taskId, userId, options) {
+  const user = DB.usuarios.find(u => u.id === userId);
+  const userName = user?.nombre || 'este recurso';
+  // Remove any prior dialog
+  document.getElementById('role-choice-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'role-choice-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:#0006;display:flex;align-items:center;justify-content:center;z-index:9999';
+  overlay.innerHTML = `
+    <div style="background:var(--white);border-radius:8px;padding:18px 20px;width:min(420px,92vw);box-shadow:0 8px 24px #0003">
+      <div style="font-family:'Cormorant Garamond',serif;font-size:18px;margin-bottom:6px">¿Qué rol cubre ${userName}?</div>
+      <div style="font-size:11px;color:var(--gray);margin-bottom:14px">Esta tarea tiene varios roles. Elige cuál ocupará.</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${options.map(o => `<button onclick="confirmRoleChoice('${taskId}','${userId}',${o.i})" style="padding:10px 12px;text-align:left;border:0.5px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:inherit;font-size:12px">
+          <div>${o.r}${o.filled?' <span style="font-size:9px;color:var(--warn)">(reemplaza al actual)</span>':''}</div>
+        </button>`).join('')}
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button class="btn-secondary" onclick="document.getElementById('role-choice-overlay').remove()">Cancelar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function confirmRoleChoice(taskId, userId, roleIdx) {
+  document.getElementById('role-choice-overlay')?.remove();
+  const task = DB.tareas.find(t=>t.id===taskId);
+  if (!task) return;
+  const roles = getTaskRolesList(task);
+  const ids = getTaskAssignedIds(task, pendingAssignments[taskId]);
+  // If this user was already in another slot, clear that one first.
+  ids.forEach((v, j) => { if (v === userId && j !== roleIdx) ids[j] = ''; });
+  ids[roleIdx] = userId;
+  pendingAssignments[taskId] = joinAssignedIds(ids);
+  propagateRoleInModal(roles[roleIdx], userId);
+  rerenderResModal();
+  autoAdvanceAfterAssign(taskId);
+}
+
+function clearResRoleAssignment(taskId, roleIdx) {
+  const task = DB.tareas.find(t=>t.id===taskId);
+  if (!task) return;
+  const ids = getTaskAssignedIds(task, pendingAssignments[taskId]);
+  ids[roleIdx] = '';
+  pendingAssignments[taskId] = joinAssignedIds(ids);
+  rerenderResModal();
+}
+
+function rerenderResModal() {
   const proj = DB.proyectos.find(p=>p.id===currentResProjId);
   const fases = currentResMode==='early' ? FASES_EARLY : FASES_LATE;
   const tasks = DB.tareas.filter(t=>t.proyecto_id===currentResProjId && fases.includes(t.fase));
   renderResTaskList(tasks);
-  renderResUserList(taskId, proj);
+  if (currentResTask) renderResUserList(currentResTask, proj);
   updateResCount(tasks);
-  // Auto-advance to next unassigned task
-  const nextTask = tasks.find(t => t.id !== taskId && !(pendingAssignments[t.id]||t.usuario_id));
-  if (nextTask) { setTimeout(()=>selectResTask(nextTask.id), 300); }
+}
+
+function autoAdvanceAfterAssign(taskId) {
+  // Only auto-advance if THIS task is now fully staffed.
+  const task = DB.tareas.find(t=>t.id===taskId);
+  if (!task) return;
+  const roles = getTaskRolesList(task);
+  const ids = getTaskAssignedIds(task, pendingAssignments[taskId]);
+  if (roles.length && ids.every(Boolean)) {
+    const proj = DB.proyectos.find(p=>p.id===currentResProjId);
+    const fases = currentResMode==='early' ? FASES_EARLY : FASES_LATE;
+    const tasks = DB.tareas.filter(t=>t.proyecto_id===currentResProjId && fases.includes(t.fase));
+    const nextTask = tasks.find(t => {
+      if (t.id === taskId) return false;
+      const tr = getTaskRolesList(t);
+      const tids = getTaskAssignedIds(t, pendingAssignments[t.id]);
+      return tr.length === 0 || !tids.every(Boolean);
+    });
+    if (nextTask) setTimeout(()=>selectResTask(nextTask.id), 300);
+  }
 }
 
 function updateResCount(tasks) {
   const el = document.getElementById('res-assign-count');
   if (!el) return;
-  const done = tasks.filter(t=>pendingAssignments[t.id]||t.usuario_id).length;
+  // A task counts as "asignada" when every one of its roles has a user.
+  const done = tasks.filter(t => {
+    const roles = getTaskRolesList(t);
+    const ids = getTaskAssignedIds(t, pendingAssignments[t.id]);
+    return roles.length > 0 && ids.every(Boolean);
+  }).length;
   el.textContent = done+'/'+tasks.length+' asignadas';
   el.style.color = done===tasks.length ? 'var(--green)' : 'var(--gray)';
 }
@@ -2107,10 +2574,12 @@ async function saveAllAssignments(proyId) {
   const assigned = Object.entries(pendingAssignments);
   if (!assigned.length) { closeModal(); return; }
   showToast('Guardando asignaciones...', 'info');
-  for (const [taskId, userId] of assigned) {
+  for (const [taskId, value] of assigned) {
     const task = DB.tareas.find(t=>t.id===taskId);
     if (!task) continue;
-    task.usuario_id = userId;
+    // `value` is already the comma-joined id list aligned to task.rol.
+    // For single-role tasks it's just a plain id, matching old behavior.
+    task.usuario_id = value;
     const rowNum = getRowNum('tareas', taskId);
     if (rowNum >= 0) {
       await sheetsUpdate('tareas', rowNum, SHEET_HEADERS.tareas.map(h=>task[h]||''));
@@ -2145,6 +2614,13 @@ function openNewProjectModal() {
       <div class="form-group"><label class="flabel">Presupuesto</label><input class="finput" id="np-budget" placeholder="$000,000"></div>
       <div class="form-group"><label class="flabel">Tipo</label>
         <select class="fselect" id="np-type" onchange="calcStartFromDeadline()">${getProjectTypes().map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+      </div>
+      <div class="form-group full">
+        <label class="flabel" style="display:flex;align-items:center;justify-content:space-between">
+          <span>Responsable de proyecto</span>
+          <button onclick="openResponsableUtilizationModal()" style="padding:2px 8px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:9px;cursor:pointer;color:var(--gray);text-transform:none;letter-spacing:0">📊 Ver utilización por mes</button>
+        </label>
+        ${(()=>{const cand = getResponsableCandidates(); return cand.length ? `<select class="fselect" id="np-responsable"><option value="">— Sin asignar —</option>${cand.map(u=>`<option value="${u.id}">${u.nombre}</option>`).join('')}</select>` : `<div style="padding:7px 10px;border:0.5px solid var(--border);border-radius:5px;background:var(--sand);font-size:11px;color:var(--gray)">Sin usuarios con rol "Responsable de Proyecto". Crea uno en Configuración → Usuarios.</div><input type="hidden" id="np-responsable" value="">`;})()}
       </div>
       <div class="form-group full"><label class="flabel">Status</label>
         <select class="fselect" id="np-status"><option>Por iniciar</option><option>En progreso</option><option>Atrasado</option><option>En riesgo</option><option>Completado</option></select>
@@ -2316,6 +2792,11 @@ const calcEstimatedDelivery = calcStartFromDeadline;
 async function createProject() {
   const name = document.getElementById('np-name').value.trim();
   if (!name) { showToast('El nombre es obligatorio', 'error'); return; }
+  const endVal = document.getElementById('np-end').value;
+  if (!endVal) {
+    showToast('La fecha de entrega es obligatoria — se necesita para calcular la fecha de inicio.', 'error');
+    return;
+  }
   const id = genId();
   const now = new Date().toISOString();
   const proj = {
@@ -2323,11 +2804,11 @@ async function createProject() {
     cliente_id: document.getElementById('np-client').value,
     status: document.getElementById('np-status').value,
     fecha_inicio: document.getElementById('np-start').value,
-    fecha_fin: document.getElementById('np-end').value,
+    fecha_fin: endVal,
     presupuesto: document.getElementById('np-budget').value,
     tipo: document.getElementById('np-type').value,
     descripcion: document.getElementById('np-desc').value,
-    responsable_id: '',
+    responsable_id: document.getElementById('np-responsable')?.value || '',
     creado_en: now
   };
 
@@ -2348,10 +2829,16 @@ async function createProject() {
   // mutate it without touching the original tipo template.
   const plan = activeTasks.map(tpl => {
     const baseH = (tpl.horas != null ? Number(tpl.horas) : (tpl.duracion != null ? Number(tpl.duracion) : 8));
+    // Preserve every non-empty role from the tipo template (a task can
+    // need e.g. Director + Responsable de Proyecto at the same time).
+    // We store them comma-joined; single-role tasks stay a plain string.
+    const rolesArr = Array.isArray(tpl.roles)
+      ? tpl.roles.map(r => (r||'').trim()).filter(Boolean)
+      : (tpl.rol ? [String(tpl.rol).trim()] : []);
     return {
       nombre: tpl.nombre,
       fase: tpl.fase || '',
-      rol: tpl.rol || (Array.isArray(tpl.roles) ? tpl.roles.filter(Boolean)[0] : '') || '',
+      rol: rolesArr.join(', '),
       start_day: tpl.start_day || 0,
       horas: baseH,
       originalHoras: baseH,
@@ -2430,7 +2917,8 @@ async function persistNewProject(proj, plan) {
   renderProjectSelector();
   renderOverview();
   loadProject(proj.id);
-  showToast('Proyecto creado con '+taskRows.length+' tareas ✓', 'success');
+  const fmtShort = s => { if(!s) return '—'; const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}); };
+  showToast('Proyecto creado con '+taskRows.length+' tareas ✓  ·  Inicio: '+fmtShort(proj.fecha_inicio)+'  ·  Entrega: '+fmtShort(proj.fecha_fin), 'success');
   setTimeout(() => openResourceAssignmentModal(proj.id, 'early'), 600);
 }
 
@@ -4559,8 +5047,8 @@ function renderMyDay() {
   DB.proyectos.forEach(proj => {
     const pStart = new Date(proj.fecha_inicio||'2025-01-01');
     DB.tareas.filter(t=>t.proyecto_id===proj.id && t.done!=='true').forEach(t => {
-      // Match by usuario_id or by rol if no user assigned
-      if (empId && t.usuario_id !== empId) return;
+      // Match by usuario_id (any role slot for multi-role tasks).
+      if (empId && !(t.usuario_id || '').split(',').map(s=>s.trim()).includes(empId)) return;
       if (!empId && sysUser?.rol!=='admin') return;
       const sd = new Date(pStart.getTime()+(parseInt(t.start_day)||0)*864e5);
       const ed = new Date(sd.getTime()+hoursToDays(parseInt(t.duracion)||8)*864e5);
@@ -4586,7 +5074,7 @@ function renderMyDay() {
   const future = myTasks.filter(({sd}) => sd > today).slice(0,15);
 
   function taskCard({task, proj, sd, ed}, urgency) {
-    const u = DB.usuarios.find(u=>u.id===task.usuario_id);
+    const u = getPrimaryAssignedUser(task);
     const ph = PHASE_COLORS[DEFAULT_PHASES.indexOf(task.fase)%PHASE_COLORS.length]||'#888';
     const urgColor = urgency==='late'?'var(--red)':urgency==='today'?'var(--blue)':'var(--gray)';
     return `<div onclick="goToTask('${proj.id}','${task.id}')" style="border:0.5px solid var(--border);border-left:3px solid ${urgColor};border-radius:6px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:all 0.1s;background:var(--white)" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='var(--white)'">
@@ -4757,7 +5245,7 @@ async function sendCalendarInvite(taskId) {
   if (!task) return;
   const proj = DB.proyectos.find(p=>p.id===task.proyecto_id);
   const client = proj ? DB.clientes.find(c=>c.id===proj.cliente_id) : null;
-  const u = DB.usuarios.find(u=>u.id===task.usuario_id);
+  const assignedUsers = getAssignedUsersForTask(task);
 
   const title = document.getElementById('ci-title').value;
   const date = document.getElementById('ci-date').value;
@@ -4766,10 +5254,12 @@ async function sendCalendarInvite(taskId) {
 
   // Collect attendees
   const attendees = [];
-  if (u?.email) attendees.push({email:u.email});
+  assignedUsers.forEach(au => { if (au.email && !attendees.find(a=>a.email===au.email)) attendees.push({email:au.email}); });
   if (client?.email_comercial) attendees.push({email:client.email_comercial});
   const ctContacts = DB.contactos_cliente.filter(ct=>ct.cliente_id===client?.id&&ct.email);
   ctContacts.forEach(ct=>{ if(!attendees.find(a=>a.email===ct.email)) attendees.push({email:ct.email}); });
+  // Extra task resources (non-system users)
+  getTaskExtras(taskId).forEach(r => { if (r.email && !attendees.find(a=>a.email===r.email)) attendees.push({email:r.email, displayName:r.nombre||undefined}); });
 
   const startDt = date+'T'+time+':00';
   // Build end time in LOCAL time (matching timeZone tag). toISOString()
@@ -4825,15 +5315,86 @@ async function sendCalendarInvite(taskId) {
   }
 }
 
+// ── Recursos extra por tarea ─────────────────────────────────────────
+// Personas que NO son usuarios del sistema (proveedores, freelance,
+// invitados puntuales) pero deben recibir la cita y el correo de esa
+// tarea. Se persisten en la hoja `recursos_tarea`.
+function getTaskExtras(taskId) {
+  return (DB.recursos_tarea || []).filter(r => r.tarea_id === taskId);
+}
+
+function renderTaskExtrasList(taskId) {
+  const extras = getTaskExtras(taskId);
+  if (!extras.length) return `<div style="font-size:10px;color:var(--lgray);padding:6px 0">Sin recursos extra. Agrega proveedores o invitados que deban recibir la cita y el correo.</div>`;
+  return `<div style="display:flex;flex-direction:column;gap:5px">${extras.map(r => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border:0.5px solid var(--border);border-radius:5px;background:var(--white)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;display:flex;align-items:center;gap:6px"><b style="font-weight:400">${r.nombre}</b><span style="font-size:9px;color:var(--lgray)">${r.rol||''}</span></div>
+        <div style="font-size:9px;color:var(--gray);display:flex;gap:8px;flex-wrap:wrap">${r.email?`<span>✉ ${r.email}</span>`:''}${r.telefono?`<span>☎ ${r.telefono}</span>`:''}</div>
+      </div>
+      <button onclick="deleteTaskExtra('${r.id}','${taskId}')" title="Quitar" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:13px;padding:2px 6px">✕</button>
+    </div>`).join('')}</div>`;
+}
+
+function openTaskExtraModal(taskId) {
+  const task = DB.tareas.find(t => t.id === taskId);
+  if (!task) return;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">+ Recurso extra — ${task.nombre}</div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:12px">Este recurso recibirá la cita y el correo de esta tarea pero no es un usuario del sistema (no inicia sesión).</div>
+    <div class="form-grid">
+      <div class="form-group"><label class="flabel">Nombre</label><input class="finput" id="tx-name" placeholder="Nombre completo"></div>
+      <div class="form-group"><label class="flabel">Rol</label><input class="finput" id="tx-rol" placeholder="Ej: Fotógrafo, Talento, Proveedor"></div>
+      <div class="form-group"><label class="flabel">Correo</label><input class="finput" id="tx-email" type="email" placeholder="correo@ejemplo.com"></div>
+      <div class="form-group"><label class="flabel">Teléfono</label><input class="finput" id="tx-tel" placeholder="+52 ..."></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveTaskExtra('${taskId}')">Guardar recurso</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('tx-name')?.focus(), 50);
+}
+
+async function saveTaskExtra(taskId) {
+  const nombre = document.getElementById('tx-name').value.trim();
+  if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
+  const email = document.getElementById('tx-email').value.trim();
+  const telefono = document.getElementById('tx-tel').value.trim();
+  const rol = document.getElementById('tx-rol').value.trim();
+  if (!email && !telefono) { showToast('Agrega al menos correo o teléfono','error'); return; }
+  const rec = { id: genId(), tarea_id: taskId, nombre, email, telefono, rol, creado_en: new Date().toISOString() };
+  const values = SHEET_HEADERS.recursos_tarea.map(h => rec[h] || '');
+  const ok = await sheetsAppend('recursos_tarea', values);
+  if (!ok) { showToast('Error al guardar','error'); return; }
+  DB.recursos_tarea.push(rec);
+  closeModal();
+  // Re-render the task detail so the new chip shows up.
+  if (typeof openTask === 'function') openTask(taskId);
+  showToast('Recurso agregado ✓','success');
+}
+
+async function deleteTaskExtra(extraId, taskId) {
+  if (!confirm('¿Quitar este recurso de la tarea?')) return;
+  // Find row index in sheet (1-based, +1 for header)
+  const idx = DB.recursos_tarea.findIndex(r => r.id === extraId);
+  if (idx < 0) return;
+  DB.recursos_tarea.splice(idx, 1);
+  try { await sheetsDeleteRow('recursos_tarea', idx + 2); } catch(e) { console.warn('sheetsDeleteRow recursos_tarea:', e); }
+  if (typeof openTask === 'function') openTask(taskId);
+  showToast('Recurso eliminado ✓','success');
+}
+
 function openEmailModal(taskId) {
   const task = DB.tareas.find(t=>t.id===taskId);
   if (!task) return;
   const proj = DB.proyectos.find(p=>p.id===task.proyecto_id);
   const client = proj ? DB.clientes.find(c=>c.id===proj.cliente_id) : null;
-  const u = DB.usuarios.find(u=>u.id===task.usuario_id);
+  const assignedUsers = getAssignedUsersForTask(task);
   const attendees = [];
-  if (u?.email) attendees.push(u.email+' ('+u.nombre+')');
+  assignedUsers.forEach(au => { if (au.email) attendees.push(au.email+' ('+au.nombre+')'); });
   if (client?.email_comercial) attendees.push(client.email_comercial+' ('+client.nombre+')');
+  getTaskExtras(taskId).forEach(r => { if (r.email) attendees.push(r.email+' ('+r.nombre+(r.rol?' — '+r.rol:'')+')'); });
   const cfg = getSistemaConfig();
 
   document.getElementById('modal-body').innerHTML = `
@@ -4861,15 +5422,16 @@ function sendTaskEmail(taskId) {
   if (!task) return;
   const proj = DB.proyectos.find(p=>p.id===task.proyecto_id);
   const client = proj ? DB.clientes.find(c=>c.id===proj.cliente_id) : null;
-  const u = DB.usuarios.find(u=>u.id===task.usuario_id);
+  const assignedUsers = getAssignedUsersForTask(task);
   const subject = document.getElementById('em-subject').value;
   const body = document.getElementById('em-body').value;
   const cfg = getSistemaConfig();
 
   const tos = [];
-  if (u?.email) tos.push(u.email);
+  assignedUsers.forEach(au => { if (au.email && !tos.includes(au.email)) tos.push(au.email); });
   if (client?.email_comercial) tos.push(client.email_comercial);
   DB.contactos_cliente.filter(ct=>ct.cliente_id===client?.id&&ct.email).forEach(ct=>{ if(!tos.includes(ct.email)) tos.push(ct.email); });
+  getTaskExtras(taskId).forEach(r => { if (r.email && !tos.includes(r.email)) tos.push(r.email); });
 
   if (!tos.length) { showToast('Sin destinatarios con correo registrado','error'); return; }
 
