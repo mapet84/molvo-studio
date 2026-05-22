@@ -8,6 +8,7 @@
 <meta http-equiv="Expires" content="0">
 <title>Molvo Studio</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root {
   --black: #0a0a0a;
@@ -128,6 +129,10 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 .task-row { display: grid; grid-template-columns: 28px minmax(0,1fr) 110px 120px 80px 80px 90px; padding: 0; border-bottom: 0.5px solid var(--border); align-items: center; cursor: pointer; transition: background 0.1s; min-height: 38px; border-left: 2px solid transparent; }
 .task-row:hover { background: #f9f8f5; }
 .task-row.active { background: #f9f8f5; }
+.task-row.readonly .task-name,
+.task-row.readonly .date-cell { opacity: 0.78; }
+.user-task-row.readonly .task-name,
+.user-task-row.readonly .date-cell { opacity: 0.78; }
 .task-check { width: 15px; height: 15px; border: 0.5px solid var(--border); border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 9px; cursor: pointer; transition: all 0.12s; flex-shrink: 0; }
 .task-check.done { background: var(--black); color: var(--white); border-color: var(--black); }
 .task-check.locked { cursor: not-allowed; opacity: 0.35; border-style: dashed; }
@@ -246,6 +251,45 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
 .modal.wide { width: 860px; }
 .modal-title { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 400; margin-bottom: 16px; }
 .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+/* GANTT VIEW TOGGLE */
+.gantt-view-toggle { display: inline-flex; border: 0.5px solid var(--border); border-radius: 6px; overflow: hidden; }
+.gvt-btn { padding: 6px 12px; background: var(--white); color: var(--gray); border: none; border-right: 0.5px solid var(--border); font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.06em; cursor: pointer; transition: all 0.15s; }
+.gvt-btn:last-child { border-right: none; }
+.gvt-btn:hover { background: var(--cream); }
+.gvt-btn.active { background: var(--black); color: var(--white); }
+
+/* USER VIEW (gantt grouped by user) */
+.user-block { border-bottom: 0.5px solid var(--border); }
+.user-header { display: flex; align-items: center; padding: 10px 0; cursor: pointer; gap: 10px; user-select: none; }
+.user-header .user-av { width: 30px; height: 30px; font-size: 11px; }
+.user-block .user-table { display: none; }
+.user-block.open .user-table { display: block; }
+.user-block.open .user-chevron { transform: rotate(90deg); }
+.user-chevron { font-size: 10px; color: var(--gray); transition: transform 0.2s; }
+.user-cols { display: grid; grid-template-columns: 28px minmax(0,1fr) 140px 110px 80px 80px 90px; padding: 5px 0; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray); border-bottom: 0.5px solid var(--border); }
+.user-task-row { display: grid; grid-template-columns: 28px minmax(0,1fr) 140px 110px 80px 80px 90px; padding: 0; border-bottom: 0.5px solid var(--border); align-items: center; cursor: pointer; transition: background 0.1s; min-height: 38px; border-left: 2px solid transparent; }
+.user-task-row:hover { background: #f9f8f5; }
+.user-task-row.active { background: #f9f8f5; }
+.phase-pill { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 9px; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 135px; }
+
+/* ATTACHMENTS */
+.attach-card { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0.5px solid var(--border); border-radius: 6px; background: var(--white); }
+.attach-icon { width: 32px; height: 32px; border-radius: 6px; background: var(--cream); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.attach-info { flex: 1; min-width: 0; }
+.attach-name { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-meta { font-size: 9px; color: var(--gray); }
+.attach-actions { display: flex; gap: 4px; }
+.attach-btn { padding: 4px 8px; border: 0.5px solid var(--border); border-radius: 4px; background: none; font-family: 'DM Mono', monospace; font-size: 10px; cursor: pointer; color: var(--gray); }
+.attach-btn:hover { background: var(--cream); color: var(--black); }
+.attach-btn.danger:hover { background: #b8444418; color: var(--red); border-color: var(--red); }
+.attach-drop { border: 1px dashed var(--border); border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; transition: all 0.15s; font-size: 11px; color: var(--gray); }
+.attach-drop:hover { border-color: var(--accent); background: var(--cream); color: var(--black); }
+.attach-drop.dragover { border-color: var(--accent); background: #c9a96e15; color: var(--black); }
+
+/* PREVIEW MODAL */
+.preview-img { max-width: 100%; max-height: 70vh; border-radius: 6px; border: 0.5px solid var(--border); display: block; margin: 0 auto; }
+.preview-pdf { width: 100%; height: 70vh; border: 0.5px solid var(--border); border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -367,7 +411,11 @@ body { font-family: 'DM Mono', monospace; background: var(--white); color: var(-
         <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300" id="proj-title">Selecciona un proyecto</div>
         <div id="proj-responsable-chip" style="display:none"></div>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div class="gantt-view-toggle" id="gantt-view-toggle" style="display:none">
+          <button class="gvt-btn active" id="gvt-phase" onclick="setGanttView('phase')">Por fase</button>
+          <button class="gvt-btn" id="gvt-user" onclick="setGanttView('user')">Ver por usuario</button>
+        </div>
         <select class="fselect" id="project-selector" onchange="loadProject(this.value)" style="min-width:200px"></select>
         <button class="btn-secondary" onclick="confirmDeleteProject()" id="btn-delete-proj" style="display:none;color:var(--red);border-color:var(--red)">✕ Eliminar</button>
         <button class="btn-primary" id="btn-new-project" onclick="openNewProjectModal()">+ Nuevo proyecto</button>
@@ -785,6 +833,14 @@ async function afterMolvoSignIn() {
     setTimeout(()=>{ showPanelById('myday'); document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active')); document.getElementById('nav-myday')?.classList.add('active'); }, 100);
   }
   showToast('Bienvenido, ' + user.nombre + ' ✓', 'success');
+
+  // Sincronizar adjuntos desde Drive en background (solo funciona si
+  // también se autenticó con Google — en login local sin OAuth no hay
+  // accessToken disponible, así que la función simplemente no hace
+  // nada).
+  if (typeof syncAttachmentsFromDrive === 'function') {
+    syncAttachmentsFromDrive().catch(e => console.warn('Drive sync failed:', e));
+  }
 }
 
 function applyRolePermissions() {
@@ -1061,6 +1117,13 @@ async function afterSignIn() {
     setTimeout(()=>{ showPanelById('myday'); document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active')); document.getElementById('nav-myday')?.classList.add('active'); }, 100);
   }
   showToast('Bienvenido, ' + currentMolvoUser.nombre + ' ✓', 'success');
+
+  // Sincronizar el índice de adjuntos desde Drive en segundo plano,
+  // sin bloquear la UI. Permite que los archivos estén disponibles en
+  // cualquier dispositivo donde el usuario inicie sesión.
+  if (typeof syncAttachmentsFromDrive === 'function') {
+    syncAttachmentsFromDrive().catch(e => console.warn('Drive sync failed:', e));
+  }
 }
 
 function signOut() {
@@ -1349,6 +1412,8 @@ async function loadProject(projId) {
   if (!projId) {
     document.getElementById('phases-container').innerHTML='';
     document.getElementById('btn-delete-proj').style.display='none';
+    const toggle = document.getElementById('gantt-view-toggle');
+    if (toggle) toggle.style.display = 'none';
     return;
   }
   activeProjectId = projId;
@@ -1385,9 +1450,43 @@ function renderProjectResponsableChip(proj) {
   }
 }
 
+// Gantt view mode: 'phase' (default) or 'user'. Toggle via the
+// "Ver por usuario" button. Persisted in localStorage so the choice
+// survives reload.
+let ganttViewMode = (function(){ try { return localStorage.getItem('molvo_gantt_view') || 'phase'; } catch(_) { return 'phase'; } })();
+
+function setGanttView(mode) {
+  if (mode !== 'phase' && mode !== 'user') mode = 'phase';
+  ganttViewMode = mode;
+  try { localStorage.setItem('molvo_gantt_view', mode); } catch(_) {}
+  // Update toggle button styles
+  const ph = document.getElementById('gvt-phase');
+  const us = document.getElementById('gvt-user');
+  if (ph && us) {
+    ph.classList.toggle('active', mode === 'phase');
+    us.classList.toggle('active', mode === 'user');
+  }
+  renderProject();
+}
+
 function renderProject() {
   const proj = DB.proyectos.find(p => p.id === activeProjectId);
+  // Show/hide the view toggle based on whether a project is loaded
+  const toggle = document.getElementById('gantt-view-toggle');
+  if (toggle) toggle.style.display = proj ? 'inline-flex' : 'none';
   if (!proj) return;
+  // Sync toggle button active state
+  const ph = document.getElementById('gvt-phase');
+  const us = document.getElementById('gvt-user');
+  if (ph && us) {
+    ph.classList.toggle('active', ganttViewMode === 'phase');
+    us.classList.toggle('active', ganttViewMode === 'user');
+  }
+  if (ganttViewMode === 'user') return renderProjectByUser(proj);
+  return renderProjectByPhase(proj);
+}
+
+function renderProjectByPhase(proj) {
   const tasks = DB.tareas.filter(t => t.proyecto_id === activeProjectId);
   const phases = [...new Set(tasks.map(t => t.fase))];
   if (!phases.length) { document.getElementById('phases-container').innerHTML = `<div class="empty-state"><div>Sin tareas. Usa el botón + para agregar.</div></div>`; return; }
@@ -1421,6 +1520,100 @@ function renderProject() {
   }).join('');
 }
 
+// ── Vista por usuario ────────────────────────────────────────────────
+// Agrupa las tareas del proyecto activo por usuario responsable, en
+// lugar de por fase. Cada usuario aparece como una sección colapsable
+// con sus tareas asignadas. Las tareas sin responsable se agrupan en
+// "Sin asignar".
+function renderProjectByUser(proj) {
+  const tasks = DB.tareas.filter(t => t.proyecto_id === activeProjectId);
+  if (!tasks.length) { document.getElementById('phases-container').innerHTML = `<div class="empty-state"><div>Sin tareas. Usa el botón + para agregar.</div></div>`; return; }
+
+  const pStart = new Date(proj.fecha_inicio || '2025-01-01');
+
+  // Agrupar tareas por usuario_id
+  const groups = new Map();
+  for (const t of tasks) {
+    const uid = (t.usuario_id || '').trim() || '__unassigned__';
+    if (!groups.has(uid)) groups.set(uid, []);
+    groups.get(uid).push(t);
+  }
+
+  // Ordenar: primero usuarios con tareas, luego sin asignar al final
+  const entries = [...groups.entries()].sort((a, b) => {
+    if (a[0] === '__unassigned__') return 1;
+    if (b[0] === '__unassigned__') return -1;
+    const ua = DB.usuarios.find(u => u.id === a[0]);
+    const ub = DB.usuarios.find(u => u.id === b[0]);
+    return (ua?.nombre || '').localeCompare(ub?.nombre || '');
+  });
+
+  const container = document.getElementById('phases-container');
+  container.innerHTML = entries.map(([uid, userTasks]) => {
+    const user = uid === '__unassigned__' ? null : DB.usuarios.find(u => u.id === uid);
+    const doneCount = userTasks.filter(t => t.done === 'true').length;
+    const totalH = userTasks.reduce((s, t) => s + (parseInt(t.duracion) || 0), 0);
+    const userColor = user?.color || '#888';
+    const userName = user ? user.nombre : 'Sin asignar';
+    const initials = user?.iniciales || '—';
+    const roles = user?.roles || '';
+
+    return `<div class="user-block open" data-user="${uid}">
+      <div class="user-header" onclick="this.closest('.user-block').classList.toggle('open')">
+        <div class="user-av" style="background:${userColor}22;color:${userColor}">${initials}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:'Cormorant Garamond',serif;font-size:15px;font-weight:400;letter-spacing:0.04em;color:${userColor}">${userName}</div>
+          ${roles ? `<div style="font-size:9px;color:var(--gray);text-transform:uppercase;letter-spacing:0.06em">${roles}</div>` : ''}
+        </div>
+        <span style="font-size:10px;color:var(--gray);margin-right:6px">${totalH}h · ${doneCount}/${userTasks.length} tareas</span>
+        <span class="user-chevron">›</span>
+      </div>
+      <div class="user-table">
+        <div class="user-cols"><span></span><span>Tarea</span><span>Fase</span><span>Rol</span><span>Inicio</span><span>Fin</span><span>Datos</span></div>
+        ${userTasks.map(t => userTaskRow(t, pStart)).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function userTaskRow(t, pStart) {
+  const sd = addD(pStart, parseInt(t.start_day)||0);
+  const ed = addD(pStart, (parseInt(t.start_day)||0) + hoursToDays(parseInt(t.duracion)||8));
+  const isActive = activeTaskId === t.id;
+  const phIdx = DEFAULT_PHASES.indexOf(t.fase);
+  const phColor = PHASE_COLORS[(phIdx >= 0 ? phIdx : 0) % PHASE_COLORS.length] || '#888';
+  const fields = DB.campos_tarea.filter(c => c.tarea_id === t.id && c.requerido === 'true');
+  const filledFields = fields.filter(c => c.valor && c.valor.trim() !== '');
+  const total = fields.length, filled = filledFields.length;
+  const ok = total === 0 || filled === total;
+  const canEdit = canEditTask(t);
+  let compHtml = '';
+  if (total > 0) {
+    const pct = Math.round(filled/total*100);
+    const col = filled===total?'var(--green)':filled===0?'var(--red)':'var(--warn)';
+    compHtml = `<div style="display:flex;align-items:center;gap:5px"><span class="comp-badge" style="background:${col}18;color:${col}">${filled}/${total}</span><div class="comp-mini"><div class="comp-mini-fill" style="width:${pct}%;background:${col}"></div></div></div>`;
+  } else { compHtml = '<span style="color:var(--lgray);font-size:10px">—</span>'; }
+
+  const checkInner = t.done==='true'
+    ? `<div class="task-check done">✓</div>`
+    : (canEdit
+        ? `<div class="task-check ${ok?'':'locked'}"></div>`
+        : `<div class="task-check locked" title="Solo lectura — no asignada a ti" style="cursor:not-allowed">🔒</div>`);
+  const checkCell = canEdit
+    ? `<div onclick="event.stopPropagation();tryComplete('${t.id}','${phColor}')">${checkInner}</div>`
+    : `<div onclick="event.stopPropagation()" style="cursor:not-allowed">${checkInner}</div>`;
+
+  return `<div class="user-task-row${isActive?' active':''}${canEdit?'':' readonly'}" style="border-left-color:${isActive?phColor:'transparent'}" onclick="openTask('${t.id}')">
+    ${checkCell}
+    <div class="task-name${t.done==='true'?' done-text':''}" title="${t.nombre}">${canEdit?'':'<span style="opacity:0.6;margin-right:4px" title="Solo lectura">🔒</span>'}${t.nombre}</div>
+    <div><span class="phase-pill" style="background:${phColor}18;color:${phColor}" title="${t.fase}">${t.fase}</span></div>
+    <div><span class="role-badge" style="border-color:${phColor}40;color:${phColor}">${t.rol}</span></div>
+    <div class="date-cell">${fmt(sd)}</div>
+    <div class="date-cell">${fmt(ed)}</div>
+    <div>${compHtml}</div>
+  </div>`;
+}
+
 function togglePhase(header) { header.closest('.phase-block').classList.toggle('open'); }
 
 function addD(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
@@ -1435,6 +1628,7 @@ function taskRow(t, phColor, pStart) {
   const filledFields = fields.filter(c => c.valor && c.valor.trim() !== '');
   const total = fields.length, filled = filledFields.length;
   const ok = total === 0 || filled === total;
+  const canEdit = canEditTask(t);
   let compHtml = '';
   if (total > 0) {
     const pct = Math.round(filled/total*100);
@@ -1442,11 +1636,21 @@ function taskRow(t, phColor, pStart) {
     compHtml = `<div style="display:flex;align-items:center;gap:5px"><span class="comp-badge" style="background:${col}18;color:${col}">${filled}/${total}</span><div class="comp-mini"><div class="comp-mini-fill" style="width:${pct}%;background:${col}"></div></div></div>`;
   } else { compHtml = '<span style="color:var(--lgray);font-size:10px">—</span>'; }
 
-  return `<div class="task-row${isActive?' active':''}" style="border-left-color:${isActive?phColor:'transparent'}" onclick="openTask('${t.id}')">
-    <div onclick="event.stopPropagation();tryComplete('${t.id}','${phColor}')">
-      <div class="task-check ${t.done==='true'?'done':ok?'':'locked'}">${t.done==='true'?'✓':''}</div>
-    </div>
-    <div class="task-name${t.done==='true'?' done-text':''}" title="${t.nombre}">${t.nombre}</div>
+  // Checkbox/lock: si el usuario no es responsable, mostrar candado en
+  // lugar del check. Si está hecha, siempre se muestra el check verde
+  // (lectura aceptable). Si no, candado.
+  const checkInner = t.done==='true'
+    ? `<div class="task-check done">✓</div>`
+    : (canEdit
+        ? `<div class="task-check ${ok?'':'locked'}"></div>`
+        : `<div class="task-check locked" title="Solo lectura — no asignada a ti" style="cursor:not-allowed">🔒</div>`);
+  const checkCell = canEdit
+    ? `<div onclick="event.stopPropagation();tryComplete('${t.id}','${phColor}')">${checkInner}</div>`
+    : `<div onclick="event.stopPropagation()" style="cursor:not-allowed">${checkInner}</div>`;
+
+  return `<div class="task-row${isActive?' active':''}${canEdit?'':' readonly'}" style="border-left-color:${isActive?phColor:'transparent'}" onclick="openTask('${t.id}')">
+    ${checkCell}
+    <div class="task-name${t.done==='true'?' done-text':''}" title="${t.nombre}">${canEdit?'':'<span style="opacity:0.6;margin-right:4px" title="Solo lectura">🔒</span>'}${t.nombre}</div>
     <div><span class="role-badge" style="border-color:${phColor}40;color:${phColor}">${t.rol}</span></div>
     <div style="display:flex;align-items:center">${u?`<div class="user-av" style="background:${u.color||'#888'}22;color:${u.color||'#888'}">${u.iniciales}</div><span style="font-size:11px">${u.nombre.split(' ')[0]}</span>`:'<span style="font-size:11px;color:var(--lgray)">—</span>'}</div>
     <div class="date-cell">${fmt(sd)}</div>
@@ -1707,6 +1911,7 @@ async function createBillingHito(task, proj, billing, client) {
 async function tryComplete(taskId, phColor) {
   const task = DB.tareas.find(t => t.id === taskId);
   if (!task) return;
+  if (_blockIfNotEditable(task, 'No puedes completar una tarea que no está asignada a ti')) return;
 
   // Uncheck
   if (task.done === 'true') {
@@ -1796,21 +2001,41 @@ function openTask(taskId) {
   const accionables = client ? DB.accionables_pago.filter(a => a.cliente_id === client.id) : [];
   const billing = accionables.find(a => a.tarea_ref === task.nombre);
 
+  // Permisos: ¿este usuario puede modificar esta tarea?
+  // - Admin: siempre sí
+  // - Resto: solo si la tarea está asignada a su empleado
+  // Si no puede editar, el detalle se abre en modo solo-lectura: ver
+  // campos, recursos extra y abrir/descargar adjuntos, pero ningún
+  // botón de modificación ni acción (cita, correo, factura, subir, etc).
+  const canEdit = canEditTask(task);
+  const readOnlyBanner = canEdit ? '' : `
+    <div style="padding:9px 12px;background:var(--cream);border:0.5px solid var(--border);border-left:3px solid var(--warn);border-radius:6px;margin-bottom:14px;display:flex;align-items:center;gap:10px;font-size:11px;color:var(--gray)">
+      <span style="font-size:14px">🔒</span>
+      <span>Solo lectura — esta tarea no está asignada a ti. Puedes ver los campos y abrir los archivos adjuntos, pero no modificar nada. ${currentMolvoUser?.rol==='admin'?'':'<span style="color:var(--lgray)">Solo el administrador o la persona asignada pueden editarla.</span>'}</span>
+    </div>`;
+
   let btnClass = task.done==='true'?'already-done':allReady?'enabled':'blocked';
   let btnLabel = task.done==='true'?'✓ Completada — clic para reabrir':allReady?'Marcar como completada':`Faltan ${total-filled} campos requeridos`;
+  // En modo solo-lectura el botón de completar queda visible pero
+  // bloqueado, con label claro.
+  if (!canEdit) { btnClass = 'blocked'; btnLabel = '🔒 Solo lectura'; }
 
   function fieldCard(f) {
     const hasVal = f.valor && f.valor.trim() !== '';
     const state = f.requerido==='true' ? (hasVal?'filled':'empty') : 'optional';
     const stateLabel = f.requerido==='true' ? (hasVal?'Llenado':'Requerido') : 'Opcional';
-    const isEd = activeFieldKey === f.id;
+    const isEd = activeFieldKey === f.id && canEdit;
     let inputHtml = '';
     if (isEd) {
       if (f.tipo === 'select') inputHtml = `<div class="field-input-wrap"><select id="fi_${f.id}" onclick="event.stopPropagation()"><option>Sí</option><option>No</option><option>Pendiente</option><option>Aprobado</option></select><button class="save-field-btn" onclick="event.stopPropagation();saveFieldVal('${f.id}','${taskId}')">Guardar</button></div>`;
       else if (f.tipo === 'textarea') inputHtml = `<div class="field-input-wrap"><textarea id="fi_${f.id}" rows="3" onclick="event.stopPropagation()">${f.valor||''}</textarea><button class="save-field-btn" onclick="event.stopPropagation();saveFieldVal('${f.id}','${taskId}')">Guardar</button></div>`;
       else inputHtml = `<div class="field-input-wrap"><input id="fi_${f.id}" type="${f.tipo==='date'?'date':'text'}" value="${f.valor||''}" onclick="event.stopPropagation()"><button class="save-field-btn" onclick="event.stopPropagation();saveFieldVal('${f.id}','${taskId}')">Guardar</button></div>`;
     }
-    return `<div class="field-card ${state}" onclick="editFieldKey('${f.id}','${taskId}')">
+    // En modo solo-lectura el card no responde al click (cursor default,
+    // sin onclick). Esto evita que el usuario active el modo edición.
+    const cardClick = canEdit ? `onclick="editFieldKey('${f.id}','${taskId}')"` : '';
+    const cardStyle = canEdit ? '' : 'cursor:default';
+    return `<div class="field-card ${state}" ${cardClick} style="${cardStyle}">
       <div class="field-label">${f.label}<span class="field-indicator">${stateLabel}</span></div>
       ${isEd?'':`<div class="field-value${hasVal?'':' empty-val'}">${hasVal?f.valor:'Sin llenar...'}</div>`}
       ${inputHtml}
@@ -1830,6 +2055,7 @@ function openTask(taskId) {
       <button class="detail-close" onclick="closeDetail()">✕</button>
     </div>
 
+    ${readOnlyBanner}
     ${billing ? `<div class="billing-banner"><div style="font-size:18px">$</div><div><div style="font-size:12px;color:var(--warn);margin-bottom:2px">Accionable de cobranza — ${billing.label} (${billing.porcentaje}%)</div><div style="font-size:11px;color:var(--gray)">Al completar esta tarea se activa el cobro. Días de pago: ${client?.dias_pago||'—'} · ${client?.metodo_pago||'—'}</div></div></div>` : ''}
 
     <div class="contact-grid">
@@ -1895,32 +2121,46 @@ function openTask(taskId) {
     ${reqFields.length ? `<div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:10px">Campos obligatorios <span style="font-size:10px;padding:1px 6px;border-radius:3px;background:var(--cream);color:var(--gray)">${filled}/${total}</span></div><div class="fields-grid">${reqFields.map(fieldCard).join('')}</div>` : ''}
     ${optFields.length ? `<div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--gray);margin-bottom:10px;margin-top:4px">Campos opcionales</div><div class="fields-grid">${optFields.map(fieldCard).join('')}</div>` : ''}
 
-    ${!fields.length ? `<div style="margin-bottom:14px"><button class="btn-secondary" style="font-size:10px" onclick="openAddFieldModal('${taskId}')">+ Agregar campos a esta tarea</button></div>` : `<div style="margin-bottom:8px"><button class="btn-secondary" style="font-size:10px" onclick="openAddFieldModal('${taskId}')">+ Agregar campo</button></div>`}
+    ${!fields.length
+      ? (canEdit ? `<div style="margin-bottom:14px"><button class="btn-secondary" style="font-size:10px" onclick="openAddFieldModal('${taskId}')">+ Agregar campos a esta tarea</button></div>` : '')
+      : (canEdit ? `<div style="margin-bottom:8px"><button class="btn-secondary" style="font-size:10px" onclick="openAddFieldModal('${taskId}')">+ Agregar campo</button></div>` : '')}
 
     <div style="display:flex;gap:8px;padding-top:14px;border-top:0.5px solid var(--border);flex-wrap:wrap">
-      <button class="complete-btn ${btnClass}" onclick="tryComplete('${task.id}','${phColor}')" style="flex:1">${btnLabel}</button>
-      <button onclick="openEditTaskModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--border);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--gray)">✎ Editar</button>
-      ${(()=>{const catTask=catalogTareas?catalogTareas.find(ct=>ct.nombre===task.nombre):null; const showCita=!catTask||catTask.habilitar_cita!==false; const showMail=!catTask||catTask.habilitar_email!==false; return (showCita?`<button onclick="openCalendarInviteModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">📅 Cita</button>`:'')+(showMail?`<button onclick="openEmailModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">✉ Correo</button>`:'')})()} 
+      <button class="complete-btn ${btnClass}" ${canEdit?`onclick="tryComplete('${task.id}','${phColor}')"`:''} style="flex:1${canEdit?'':';cursor:not-allowed'}">${btnLabel}</button>
+      ${canEdit ? `<button onclick="openEditTaskModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--border);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--gray)">✎ Editar</button>` : ''}
+      ${canEdit ? (()=>{const catTask=catalogTareas?catalogTareas.find(ct=>ct.nombre===task.nombre):null; const showCita=!catTask||catTask.habilitar_cita!==false; const showMail=!catTask||catTask.habilitar_email!==false; return (showCita?`<button onclick="openCalendarInviteModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">📅 Cita</button>`:'')+(showMail?`<button onclick="openEmailModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">✉ Correo</button>`:'')})() : ''}
+      ${canEdit ? `<button onclick="openInvoiceModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--gold);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--gold)">💲 Crear factura</button>` : ''}
     </div>
 
     <div style="margin-top:14px;padding-top:14px;border-top:0.5px solid var(--border)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Recursos extra <span style="color:var(--lgray);text-transform:none;letter-spacing:0;font-size:10px">(no usuarios del sistema — se incluyen en cita y correo)</span></div>
-        <button onclick="openTaskExtraModal('${task.id}')" style="padding:3px 9px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;color:var(--gray)">+ Agregar</button>
+        ${canEdit ? `<button onclick="openTaskExtraModal('${task.id}')" style="padding:3px 9px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;color:var(--gray)">+ Agregar</button>` : ''}
       </div>
-      ${renderTaskExtrasList(task.id)}
+      ${renderTaskExtrasList(task.id, canEdit)}
+    </div>
+
+    <div style="margin-top:14px;padding-top:14px;border-top:0.5px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:var(--gray)">Archivos adjuntos <span style="color:var(--lgray);text-transform:none;letter-spacing:0;font-size:10px">(${canEdit?'se guardan en Google Drive · disponibles en cualquier dispositivo':'solo lectura — puedes ver y descargar'})</span></div>
+        ${canEdit ? `<button onclick="triggerAttachUpload('${task.id}')" style="padding:3px 9px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;color:var(--gray)">+ Subir archivo</button>` : ''}
+      </div>
+      ${canEdit ? `<input type="file" id="attach-input-${task.id}" multiple style="display:none" onchange="handleAttachUpload('${task.id}', this.files)">` : ''}
+      ${renderTaskAttachmentsList(task.id, canEdit)}
     </div>`;
 
   wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 
 function editFieldKey(fieldId, taskId) {
+  if (_blockIfNotEditable(taskId, 'No puedes editar los campos de una tarea que no está asignada a ti')) return;
   activeFieldKey = fieldId;
   openTask(taskId);
   setTimeout(() => { const el = document.getElementById('fi_'+fieldId); if(el){el.focus();} }, 50);
 }
 
 async function saveFieldVal(fieldId, taskId) {
+  if (_blockIfNotEditable(taskId)) return;
   const el = document.getElementById('fi_'+fieldId);
   if (!el) return;
   const field = DB.campos_tarea.find(c => c.id === fieldId);
@@ -2038,6 +2278,35 @@ function getPrimaryAssignedUser(task) {
 function getAssignedUsersForTask(task) {
   const u = getPrimaryAssignedUser(task);
   return u ? [u] : [];
+}
+
+// ── Permisos de tarea ────────────────────────────────────────────────
+// Reglas:
+//   • Los admins pueden ver y modificar cualquier tarea.
+//   • El resto de usuarios SOLO pueden modificar tareas asignadas a su
+//     empleado (su `empleadoId` aparece en `task.usuario_id`, que
+//     admite varios usuarios separados por coma para tareas multi-rol).
+//   • Si la tarea no está asignada al usuario actual, el detalle se
+//     abre en modo solo-lectura: pueden ver campos, recursos extra y
+//     abrir/descargar archivos adjuntos, pero no editar nada.
+//
+// `task` puede ser un objeto o solo el id.
+function canEditTask(task) {
+  if (!currentMolvoUser) return false;
+  if (currentMolvoUser.rol === 'admin') return true;
+  const empId = currentMolvoUser.empleadoId;
+  if (!empId) return false; // usuario sin empleado vinculado: nada
+  const t = (typeof task === 'string') ? DB.tareas.find(x => x.id === task) : task;
+  if (!t) return false;
+  return (t.usuario_id || '').split(',').map(s => s.trim()).includes(empId);
+}
+
+// Versión que muestra un toast cuando se intenta hacer una acción
+// bloqueada. Devuelve true si se debe abortar la acción.
+function _blockIfNotEditable(task, msg) {
+  if (canEditTask(task)) return false;
+  showToast(msg || 'Solo lectura — esta tarea no está asignada a ti', 'error');
+  return true;
 }
 
 
@@ -2910,6 +3179,7 @@ function openAddTaskModal(phase, phColor, editTaskId=null) {
 function openEditTaskModal(taskId) {
   const task = DB.tareas.find(t=>t.id===taskId);
   if (!task) return;
+  if (_blockIfNotEditable(task, 'No puedes editar una tarea que no está asignada a ti')) return;
   const phColor = PHASE_COLORS[DEFAULT_PHASES.indexOf(task.fase)%PHASE_COLORS.length]||'#888';
   openAddTaskModal(task.fase, phColor, taskId);
 }
@@ -2972,6 +3242,7 @@ async function createTask(phase) {
 
 // ----------------------------------------
 function openAddFieldModal(taskId) {
+  if (_blockIfNotEditable(taskId, 'No puedes agregar campos a una tarea que no está asignada a ti')) return;
   document.getElementById('modal-body').innerHTML = `
     <div class="modal-title">Nuevo campo</div>
     <div class="form-grid">
@@ -4864,38 +5135,33 @@ function renderMyDay() {
   const dayNames = ['Domingo','Lunes','Martes','Mi\u00e9rcoles','Jueves','Viernes','S\u00e1bado'];
   const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
-  // Greeting
+  // Greeting — siempre dirigido al usuario que inició sesión, usando
+  // su primer nombre para que sea más natural. Caídas defensivas:
+  // nombre completo → username → topbar → "Hola" pelado si no hay
+  // ningún dato (caso raro: panel abierto antes de terminar el login).
   const h = new Date().getHours();
   const greeting = h<12?'Buenos d\u00edas':h<18?'Buenas tardes':'Buenas noches';
-  const userName = currentMolvoUser?.nombre || 'equipo';
+  const fullName = (currentMolvoUser?.nombre || currentMolvoUser?.name || currentMolvoUser?.username
+                   || document.getElementById('user-name')?.textContent || '').trim();
+  const firstName = fullName.split(/\s+/)[0] || '';
   const el = document.getElementById('myday-greeting');
-  if (el) el.textContent = greeting+', '+userName;
+  if (el) el.textContent = firstName ? (greeting+', '+firstName) : greeting;
   const dd = document.getElementById('myday-date');
   if (dd) dd.textContent = dayNames[today.getDay()]+' '+today.getDate()+' de '+months[today.getMonth()]+' '+today.getFullYear();
 
-  // Find this user's tasks
+  // Find this user's tasks — SOLO las asignadas al usuario que está
+  // logueado, sin excepciones (los admins sin empleadoId no ven tareas
+  // en Mi Día: para ver todas usen el panel Overview / Proyectos).
   const sysUser = currentMolvoUser;
   const empId = sysUser?.empleadoId;
-  let myTasks = [];
+  const myTasks = [];
 
-  DB.proyectos.forEach(proj => {
-    const pStart = new Date(proj.fecha_inicio||'2025-01-01');
-    DB.tareas.filter(t=>t.proyecto_id===proj.id && t.done!=='true').forEach(t => {
-      // Match by usuario_id (any role slot for multi-role tasks).
-      if (empId && !(t.usuario_id || '').split(',').map(s=>s.trim()).includes(empId)) return;
-      if (!empId && sysUser?.rol!=='admin') return;
-      const sd = new Date(pStart.getTime()+(parseInt(t.start_day)||0)*864e5);
-      const ed = new Date(sd.getTime()+hoursToDays(parseInt(t.duracion)||8)*864e5);
-      myTasks.push({task:t, proj, sd, ed});
-    });
-  });
-
-  if (!empId && sysUser?.rol==='admin') {
-    // Admin sees all tasks
-    myTasks = [];
+  if (empId) {
     DB.proyectos.forEach(proj => {
       const pStart = new Date(proj.fecha_inicio||'2025-01-01');
       DB.tareas.filter(t=>t.proyecto_id===proj.id && t.done!=='true').forEach(t => {
+        // Match by usuario_id (any role slot for multi-role tasks).
+        if (!(t.usuario_id || '').split(',').map(s=>s.trim()).includes(empId)) return;
         const sd = new Date(pStart.getTime()+(parseInt(t.start_day)||0)*864e5);
         const ed = new Date(sd.getTime()+hoursToDays(parseInt(t.duracion)||8)*864e5);
         myTasks.push({task:t, proj, sd, ed});
@@ -4923,12 +5189,25 @@ function renderMyDay() {
   }
 
   const pel = document.getElementById('myday-pending');
-  if (pel) pel.innerHTML = pending.length ? pending.map(t=>taskCard(t,'late')).join('') : '<div style="font-size:11px;color:var(--lgray);padding:12px 0">Sin tareas atrasadas ✓</div>';
-
   const tel = document.getElementById('myday-today');
-  if (tel) tel.innerHTML = todayTasks.length ? todayTasks.map(t=>taskCard(t,'today')).join('') : '<div style="font-size:11px;color:var(--lgray);padding:12px 0">Sin tareas para hoy</div>';
-
   const fel = document.getElementById('myday-future');
+
+  // Mensaje especial para usuarios del sistema (típicamente admin) que
+  // no tienen un registro de empleado vinculado y, por lo tanto, no
+  // pueden recibir asignaciones. Aclara por qué no se muestra nada.
+  if (!empId) {
+    const note = `<div style="font-size:11px;color:var(--gray);padding:12px;background:var(--cream);border-radius:6px;line-height:1.5">
+      No tienes empleado vinculado a tu cuenta, por lo que aún no hay tareas asignadas a ti.
+      <br><span style="color:var(--lgray)">Ve a Configuración → Usuarios para vincular tu cuenta a un empleado, o revisa el panel <b>Proyectos</b> para ver todas las tareas del estudio.</span>
+    </div>`;
+    if (pel) pel.innerHTML = note;
+    if (tel) tel.innerHTML = '<div style="font-size:11px;color:var(--lgray);padding:12px 0">—</div>';
+    if (fel) fel.innerHTML = '<div style="font-size:11px;color:var(--lgray);padding:12px 0">—</div>';
+    return;
+  }
+
+  if (pel) pel.innerHTML = pending.length ? pending.map(t=>taskCard(t,'late')).join('') : '<div style="font-size:11px;color:var(--lgray);padding:12px 0">Sin tareas atrasadas ✓</div>';
+  if (tel) tel.innerHTML = todayTasks.length ? todayTasks.map(t=>taskCard(t,'today')).join('') : '<div style="font-size:11px;color:var(--lgray);padding:12px 0">Sin tareas para hoy</div>';
   if (fel) fel.innerHTML = future.length ? future.map(t=>taskCard(t,'future')).join('') : '<div style="font-size:11px;color:var(--lgray);padding:12px 0">Sin tareas futuras</div>';
 }
 
@@ -5044,6 +5323,7 @@ function renderCalendar() {
 function openCalendarInviteModal(taskId) {
   const task = DB.tareas.find(t=>t.id===taskId);
   if (!task) return;
+  if (_blockIfNotEditable(task, 'No puedes crear citas para una tarea que no está asignada a ti')) return;
   const proj = DB.proyectos.find(p=>p.id===task.proyecto_id);
   const pStart = new Date(proj?.fecha_inicio||'2025-01-01');
   const sd = new Date(pStart.getTime()+(parseInt(task.start_day)||0)*864e5);
@@ -5157,22 +5437,24 @@ function getTaskExtras(taskId) {
   return (DB.recursos_tarea || []).filter(r => r.tarea_id === taskId);
 }
 
-function renderTaskExtrasList(taskId) {
+function renderTaskExtrasList(taskId, canEdit) {
+  if (canEdit === undefined) canEdit = canEditTask(taskId); // default seguro si lo llaman otros
   const extras = getTaskExtras(taskId);
-  if (!extras.length) return `<div style="font-size:10px;color:var(--lgray);padding:6px 0">Sin recursos extra. Agrega proveedores o invitados que deban recibir la cita y el correo.</div>`;
+  if (!extras.length) return `<div style="font-size:10px;color:var(--lgray);padding:6px 0">${canEdit?'Sin recursos extra. Agrega proveedores o invitados que deban recibir la cita y el correo.':'Sin recursos extra.'}</div>`;
   return `<div style="display:flex;flex-direction:column;gap:5px">${extras.map(r => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border:0.5px solid var(--border);border-radius:5px;background:var(--white)">
       <div style="flex:1;min-width:0">
         <div style="font-size:11px;display:flex;align-items:center;gap:6px"><b style="font-weight:400">${r.nombre}</b><span style="font-size:9px;color:var(--lgray)">${r.rol||''}</span></div>
         <div style="font-size:9px;color:var(--gray);display:flex;gap:8px;flex-wrap:wrap">${r.email?`<span>✉ ${r.email}</span>`:''}${r.telefono?`<span>☎ ${r.telefono}</span>`:''}</div>
       </div>
-      <button onclick="deleteTaskExtra('${r.id}','${taskId}')" title="Quitar" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:13px;padding:2px 6px">✕</button>
+      ${canEdit ? `<button onclick="deleteTaskExtra('${r.id}','${taskId}')" title="Quitar" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:13px;padding:2px 6px">✕</button>` : ''}
     </div>`).join('')}</div>`;
 }
 
 function openTaskExtraModal(taskId) {
   const task = DB.tareas.find(t => t.id === taskId);
   if (!task) return;
+  if (_blockIfNotEditable(task, 'No puedes agregar recursos a una tarea que no está asignada a ti')) return;
   document.getElementById('modal-body').innerHTML = `
     <div class="modal-title">+ Recurso extra — ${task.nombre}</div>
     <div style="font-size:11px;color:var(--gray);margin-bottom:12px">Este recurso recibirá la cita y el correo de esta tarea pero no es un usuario del sistema (no inicia sesión).</div>
@@ -5191,6 +5473,7 @@ function openTaskExtraModal(taskId) {
 }
 
 async function saveTaskExtra(taskId) {
+  if (_blockIfNotEditable(taskId)) return;
   const nombre = document.getElementById('tx-name').value.trim();
   if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
   const email = document.getElementById('tx-email').value.trim();
@@ -5209,6 +5492,7 @@ async function saveTaskExtra(taskId) {
 }
 
 async function deleteTaskExtra(extraId, taskId) {
+  if (_blockIfNotEditable(taskId, 'No puedes quitar recursos de una tarea que no está asignada a ti')) return;
   if (!confirm('¿Quitar este recurso de la tarea?')) return;
   // Find row index in sheet (1-based, +1 for header)
   const idx = DB.recursos_tarea.findIndex(r => r.id === extraId);
@@ -5222,6 +5506,7 @@ async function deleteTaskExtra(extraId, taskId) {
 function openEmailModal(taskId) {
   const task = DB.tareas.find(t=>t.id===taskId);
   if (!task) return;
+  if (_blockIfNotEditable(task, 'No puedes enviar correos desde una tarea que no está asignada a ti')) return;
   const proj = DB.proyectos.find(p=>p.id===task.proyecto_id);
   const client = proj ? DB.clientes.find(c=>c.id===proj.cliente_id) : null;
   const assignedUsers = getAssignedUsersForTask(task);
@@ -5242,8 +5527,16 @@ function openEmailModal(taskId) {
         <input class="finput" id="em-subject" value="${task.nombre}"></div>
       <div class="form-group full"><label class="flabel">Cuerpo del correo</label>
         <textarea class="finput" id="em-body" rows="6" placeholder="Escribe el mensaje aquí..."></textarea></div>
+      <div class="form-group full">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <label class="flabel" style="margin:0">Archivos adjuntos</label>
+          <button onclick="triggerEmailAttachUpload('${taskId}')" style="padding:3px 9px;border:0.5px solid var(--border);border-radius:4px;background:none;font-family:'DM Mono',monospace;font-size:10px;cursor:pointer;color:var(--gray)">+ Adjuntar archivo</button>
+        </div>
+        <input type="file" id="email-attach-input" multiple style="display:none" onchange="handleAttachUpload('${taskId}', this.files)">
+        <div id="email-attach-list">${renderEmailAttachmentsList(taskId)}</div>
+      </div>
     </div>
-    <div style="font-size:10px;color:var(--warn);padding:8px 0">⚠ El envío de correo requiere la cuenta Gmail configurada en Sistema. Se abrirá tu cliente de correo como alternativa si no está configurada.</div>
+    <div style="font-size:10px;color:var(--warn);padding:8px 0;line-height:1.5">⚠ El envío se hace abriendo tu cliente de correo (mailto). Los archivos se descargarán desde Google Drive automáticamente para que los arrastres al correo, ya que mailto no soporta adjuntos directamente.</div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
       <button class="btn-primary" onclick="sendTaskEmail('${taskId}')">Enviar correo</button>
@@ -5269,13 +5562,33 @@ function sendTaskEmail(taskId) {
 
   if (!tos.length) { showToast('Sin destinatarios con correo registrado','error'); return; }
 
-  // Use mailto as fallback (real SMTP requires backend)
+  // Descargar los adjuntos automáticamente para que el usuario los
+  // arrastre al cliente de correo. mailto: no soporta archivos
+  // adjuntos directamente — esta es la solución estándar.
+  const attachments = getTaskAttachments(taskId);
+  if (attachments.length) {
+    attachments.forEach((a, idx) => {
+      setTimeout(() => downloadAttachment(taskId, a.id), idx * 250);
+    });
+  }
+
+  // Avisar al usuario en el cuerpo del correo cuántos adjuntos hay
+  let finalBody = body;
+  if (attachments.length) {
+    finalBody = body + '\n\n--\nArchivos adjuntos (' + attachments.length + '):\n' +
+                attachments.map(a => '· ' + a.name).join('\n');
+  }
+
   const mailto = 'mailto:'+tos.join(',')+
     '?subject='+encodeURIComponent(subject)+
-    '&body='+encodeURIComponent(body);
+    '&body='+encodeURIComponent(finalBody);
   window.open(mailto,'_blank');
   closeModal();
-  showToast('Correo preparado para '+tos.length+' destinatario(s)','info');
+  if (attachments.length) {
+    showToast('Correo preparado · '+attachments.length+' archivo(s) descargado(s) para adjuntar manualmente','info');
+  } else {
+    showToast('Correo preparado para '+tos.length+' destinatario(s)','info');
+  }
 }
 
 // ----------------------------------------
@@ -5307,8 +5620,897 @@ function showToast(msg, type='info') {
   el._t = setTimeout(() => el.className = type, 2800);
 }
 
-function openModal() { document.getElementById('modal-overlay').classList.add('open'); }
-function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+function openModal() { 
+  const mb = document.getElementById('modal-body');
+  if (mb) mb.classList.remove('wide');
+  document.getElementById('modal-overlay').classList.add('open'); 
+}
+function closeModal() { 
+  const mb = document.getElementById('modal-body');
+  if (mb) mb.classList.remove('wide');
+  document.getElementById('modal-overlay').classList.remove('open'); 
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FACTURAS (Crear factura como PDF)
+// ═══════════════════════════════════════════════════════════════════
+// Genera un PDF de factura simple con el logo de Molvo, el nombre del
+// cliente y el monto. El monto se prellena con el monto del accionable
+// de pago vinculado a la tarea (si existe) o con el primer campo de la
+// tarea que contenga la palabra "monto". El usuario puede editar todo
+// antes de generar el PDF.
+function openInvoiceModal(taskId) {
+  const task = DB.tareas.find(t => t.id === taskId);
+  if (!task) return;
+  if (_blockIfNotEditable(task, 'No puedes crear facturas desde una tarea que no está asignada a ti')) return;
+  const proj = DB.proyectos.find(p => p.id === task.proyecto_id);
+  const client = proj ? DB.clientes.find(c => c.id === proj.cliente_id) : null;
+
+  // Prellenar monto: 1) accionable de pago vinculado, 2) campo "monto" de la tarea, 3) vacío
+  let montoSugerido = '';
+  let porcentajeSugerido = '';
+  if (client) {
+    const acc = DB.accionables_pago.find(a => a.cliente_id === client.id && a.tarea_ref === task.nombre);
+    if (acc) {
+      porcentajeSugerido = acc.porcentaje || '';
+      const presupuesto = parseFloat(proj?.presupuesto || 0);
+      if (presupuesto > 0 && acc.porcentaje) {
+        montoSugerido = String(Math.round(presupuesto * parseFloat(acc.porcentaje) / 100));
+      }
+    }
+  }
+  if (!montoSugerido) {
+    const montoField = DB.campos_tarea.find(c => c.tarea_id === taskId && /monto/i.test(c.label||'') && c.valor);
+    if (montoField) montoSugerido = (montoField.valor||'').replace(/[^0-9.]/g,'');
+  }
+
+  // Generar número de factura simple: F-YYYYMMDD-XXXX
+  const today = new Date();
+  const dateStr = today.getFullYear()+String(today.getMonth()+1).padStart(2,'0')+String(today.getDate()).padStart(2,'0');
+  const folio = 'F-'+dateStr+'-'+Math.random().toString(36).slice(2,6).toUpperCase();
+
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">💲 Crear factura</div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:14px">
+      Genera un PDF con el logo de Molvo, los datos del cliente y el monto.
+      ${porcentajeSugerido?`<br><span style="color:var(--warn)">⚠ Esta tarea tiene accionable de cobro del ${porcentajeSugerido}%.</span>`:''}
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label class="flabel">Folio</label>
+        <input class="finput" id="inv-folio" value="${folio}"></div>
+      <div class="form-group"><label class="flabel">Fecha</label>
+        <input class="finput" id="inv-fecha" type="date" value="${today.toISOString().split('T')[0]}"></div>
+      <div class="form-group full"><label class="flabel">Cliente</label>
+        <input class="finput" id="inv-cliente" value="${client?.nombre||''}" placeholder="Nombre del cliente"></div>
+      <div class="form-group"><label class="flabel">RFC cliente</label>
+        <input class="finput" id="inv-rfc" value="${client?.rfc||''}" placeholder="Opcional"></div>
+      <div class="form-group"><label class="flabel">Proyecto</label>
+        <input class="finput" id="inv-proyecto" value="${proj?.nombre||''}" placeholder="Nombre del proyecto"></div>
+      <div class="form-group full"><label class="flabel">Concepto</label>
+        <input class="finput" id="inv-concepto" value="${task.nombre}${porcentajeSugerido?' ('+porcentajeSugerido+'%)':''}" placeholder="Descripción del servicio"></div>
+      <div class="form-group"><label class="flabel">Monto (MXN, sin IVA)</label>
+        <input class="finput" id="inv-monto" type="number" step="0.01" value="${montoSugerido}" placeholder="0.00"></div>
+      <div class="form-group"><label class="flabel">¿Incluir IVA 16%?</label>
+        <select class="fselect" id="inv-iva">
+          <option value="si" selected>Sí (calcular IVA)</option>
+          <option value="no">No (monto sin IVA)</option>
+        </select></div>
+      <div class="form-group full"><label class="flabel">Notas / Condiciones</label>
+        <textarea class="finput" id="inv-notas" rows="2" placeholder="Días de pago, forma de pago, etc.">${client?('Días de pago: '+(client.dias_pago||30)+' días · Método: '+(client.metodo_pago||'Transferencia')):''}</textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" onclick="generateInvoicePDF('${taskId}')">📄 Generar PDF</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function generateInvoicePDF(taskId) {
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    showToast('La librería de PDF no se cargó. Revisa tu conexión a internet.','error');
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const task = DB.tareas.find(t => t.id === taskId);
+
+  const folio = document.getElementById('inv-folio').value.trim();
+  const fecha = document.getElementById('inv-fecha').value;
+  const cliente = document.getElementById('inv-cliente').value.trim();
+  const rfc = document.getElementById('inv-rfc').value.trim();
+  const proyecto = document.getElementById('inv-proyecto').value.trim();
+  const concepto = document.getElementById('inv-concepto').value.trim();
+  const montoNum = parseFloat(document.getElementById('inv-monto').value)||0;
+  const incluirIVA = document.getElementById('inv-iva').value === 'si';
+  const notas = document.getElementById('inv-notas').value.trim();
+
+  if (!cliente) { showToast('Falta el nombre del cliente','error'); return; }
+  if (montoNum <= 0) { showToast('Falta el monto de la factura','error'); return; }
+
+  const fmtMoney = n => new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n);
+  const iva = incluirIVA ? montoNum * 0.16 : 0;
+  const total = montoNum + iva;
+
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const gold = [201, 169, 110];
+  const black = [10, 10, 10];
+  const gray = [122, 117, 112];
+  const lgray = [204, 200, 191];
+  const border = [222, 218, 210];
+
+  // ── LOGO MOLVO (3x3 puntos dorados, igual que el topbar) ──
+  const logoX = 18, logoY = 18, dotR = 1.6, gap = 5;
+  doc.setFillColor(...gold);
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      doc.circle(logoX + j*gap, logoY + i*gap, dotR, 'F');
+    }
+  }
+
+  // ── ENCABEZADO ──
+  doc.setTextColor(...black);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(22);
+  doc.text('MOLVO FILMS', 40, 22);
+  doc.setFontSize(8);
+  doc.setTextColor(...gray);
+  doc.text('STUDIO · PRODUCCIÓN AUDIOVISUAL', 40, 27);
+
+  // ── FACTURA TÍTULO (derecha) ──
+  doc.setTextColor(...black);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.text('FACTURA', pageW - 18, 22, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...gray);
+  doc.text('Folio: ' + folio, pageW - 18, 28, { align: 'right' });
+  doc.text('Fecha: ' + (fecha || new Date().toISOString().split('T')[0]), pageW - 18, 33, { align: 'right' });
+
+  // ── LÍNEA DIVISORIA ──
+  doc.setDrawColor(...border);
+  doc.setLineWidth(0.3);
+  doc.line(18, 42, pageW - 18, 42);
+
+  // ── BLOQUE CLIENTE ──
+  doc.setTextColor(...gray);
+  doc.setFontSize(8);
+  doc.text('FACTURAR A', 18, 52);
+  doc.setTextColor(...black);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text(cliente, 18, 59);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(...gray);
+  let yc = 65;
+  if (rfc) { doc.text('RFC: ' + rfc, 18, yc); yc += 5; }
+  if (proyecto) { doc.text('Proyecto: ' + proyecto, 18, yc); yc += 5; }
+
+  // ── TABLA CONCEPTOS ──
+  const tableY = Math.max(yc + 10, 85);
+  doc.setFillColor(245, 243, 239);
+  doc.rect(18, tableY, pageW - 36, 9, 'F');
+  doc.setTextColor(...black);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('CONCEPTO', 22, tableY + 6);
+  doc.text('IMPORTE', pageW - 22, tableY + 6, { align: 'right' });
+
+  // Fila concepto
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(...black);
+  // Word-wrap concepto si es largo
+  const conceptoLines = doc.splitTextToSize(concepto || task?.nombre || 'Servicio', pageW - 80);
+  let ry = tableY + 16;
+  conceptoLines.forEach(line => { doc.text(line, 22, ry); ry += 5; });
+  doc.text(fmtMoney(montoNum), pageW - 22, tableY + 16, { align: 'right' });
+  const rowEndY = Math.max(ry, tableY + 22);
+  doc.setDrawColor(...border);
+  doc.line(18, rowEndY, pageW - 18, rowEndY);
+
+  // ── TOTALES ──
+  let ty = rowEndY + 8;
+  doc.setTextColor(...gray);
+  doc.setFontSize(10);
+  doc.text('Subtotal:', pageW - 60, ty);
+  doc.setTextColor(...black);
+  doc.text(fmtMoney(montoNum), pageW - 22, ty, { align: 'right' });
+  ty += 6;
+  if (incluirIVA) {
+    doc.setTextColor(...gray);
+    doc.text('IVA (16%):', pageW - 60, ty);
+    doc.setTextColor(...black);
+    doc.text(fmtMoney(iva), pageW - 22, ty, { align: 'right' });
+    ty += 6;
+  }
+  doc.setDrawColor(...black);
+  doc.setLineWidth(0.4);
+  doc.line(pageW - 60, ty, pageW - 18, ty);
+  ty += 7;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(...black);
+  doc.text('TOTAL:', pageW - 60, ty);
+  doc.setTextColor(...gold);
+  doc.text(fmtMoney(total), pageW - 22, ty, { align: 'right' });
+
+  // ── NOTAS ──
+  if (notas) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(...gray);
+    doc.text('NOTAS', 18, ty + 18);
+    doc.setTextColor(...black);
+    const notasLines = doc.splitTextToSize(notas, pageW - 36);
+    let ny = ty + 24;
+    notasLines.forEach(line => { doc.text(line, 18, ny); ny += 5; });
+  }
+
+  // ── PIE DE PÁGINA ──
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...lgray);
+  doc.text('Molvo Films Studio · Generado por Molvo Studio el ' + new Date().toLocaleString('es-MX'),
+           pageW / 2, pageH - 12, { align: 'center' });
+
+  // Nombre de archivo seguro
+  const safeName = (cliente||'cliente').replace(/[^a-zA-Z0-9\u00C0-\u017F]+/g,'_').slice(0,40);
+  const filename = 'Factura_'+folio+'_'+safeName+'.pdf';
+
+  // Descargar el PDF al disco del usuario inmediatamente
+  doc.save(filename);
+  closeModal();
+
+  // Subir el PDF a Drive en paralelo, como adjunto de la tarea, para
+  // que también esté disponible en el correo y en la lista de adjuntos
+  // desde cualquier dispositivo. Si Drive falla, al menos el PDF local
+  // ya está guardado en la computadora del usuario.
+  (async () => {
+    try {
+      const blob = doc.output('blob');
+      const pdfFile = new File([blob], filename, { type: 'application/pdf' });
+      if (accessToken) {
+        showToast('Factura generada · subiendo a Drive...','info');
+        const att = await uploadFileToDrive(taskId, pdfFile, { origin: 'invoice' });
+        addAttachmentObject(taskId, att);
+        showToast('Factura adjuntada en Drive ✓','success');
+      } else {
+        // Fallback sin sesión activa: guardar localmente
+        const dataUrl = doc.output('datauristring');
+        const size = Math.round((dataUrl.length - 'data:application/pdf;base64,'.length) * 3 / 4);
+        addAttachmentObject(taskId, {
+          id: genId(),
+          name: filename,
+          type: 'application/pdf',
+          size: size,
+          dataUrl: dataUrl,
+          origin: 'invoice',
+          created: new Date().toISOString()
+        });
+        showToast('Factura guardada localmente (sin sesión de Drive)','info');
+      }
+    } catch(e) {
+      console.warn('No se pudo adjuntar el PDF a Drive:', e);
+      // Fallback: guardar localmente
+      try {
+        const dataUrl = doc.output('datauristring');
+        const size = Math.round((dataUrl.length - 'data:application/pdf;base64,'.length) * 3 / 4);
+        addAttachmentObject(taskId, {
+          id: genId(),
+          name: filename,
+          type: 'application/pdf',
+          size: size,
+          dataUrl: dataUrl,
+          origin: 'invoice',
+          created: new Date().toISOString()
+        });
+        showToast('Drive falló · factura guardada localmente','info');
+      } catch(_) {}
+    }
+    if (typeof openTask === 'function' && activeTaskId === taskId) openTask(taskId);
+  })();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ADJUNTOS DE TAREA (Google Drive)
+// ═══════════════════════════════════════════════════════════════════
+// Los adjuntos se guardan en Google Drive, en una carpeta llamada
+// "Molvo Studio - Adjuntos" creada bajo "My Drive" del usuario. Esto
+// asegura persistencia entre dispositivos y respaldos automáticos.
+//
+// El scope `drive.file` (ya configurado) restringe el acceso a archivos
+// creados por esta app, así que no leemos ni modificamos otros archivos
+// del usuario.
+//
+// Estrategia:
+//   • Subir → multipart upload a Drive con appProperties { molvoSource,
+//     taskId, origin } para poder reconstruir el índice por tarea.
+//   • Bajar/Preview → fetch /alt=media con caché en memoria.
+//   • Borrar → DELETE en Drive + remover del índice local.
+//   • Sync inicial → al cargar la app se consulta Drive para
+//     reconstruir el índice local (permite trabajar en cualquier
+//     dispositivo).
+//
+// Compatibilidad: los registros antiguos en localStorage con `dataUrl`
+// siguen funcionando (preview/descarga locales). En la próxima subida
+// nueva, ese archivo no se migra automáticamente — el usuario puede
+// re-subir si quiere moverlo a Drive.
+
+const ATTACH_STORAGE_KEY = 'molvo_task_attachments'; // índice local (metadata)
+const ATTACH_MAX_BYTES = 25 * 1024 * 1024; // 25 MB por archivo (Drive aguanta más, pero base64 multipart se vuelve lento)
+const DRIVE_FOLDER_NAME = 'Molvo Studio - Adjuntos';
+let _molvoDriveFolderId = null;
+const _driveContentCache = new Map(); // driveFileId -> dataUrl (sesión)
+
+function _loadAllAttachments() {
+  try { return JSON.parse(localStorage.getItem(ATTACH_STORAGE_KEY) || '{}'); }
+  catch(_) { return {}; }
+}
+function _saveAllAttachments(all) {
+  try { localStorage.setItem(ATTACH_STORAGE_KEY, JSON.stringify(all)); return true; }
+  catch(e) {
+    // Quota exceeded — most likely too many big files (legacy dataUrl entries)
+    showToast('No hay espacio en el índice local (límite del navegador)','error');
+    console.warn('localStorage quota exceeded:', e);
+    return false;
+  }
+}
+function getTaskAttachments(taskId) {
+  const all = _loadAllAttachments();
+  return all[taskId] || [];
+}
+function addAttachmentObject(taskId, att) {
+  const all = _loadAllAttachments();
+  if (!all[taskId]) all[taskId] = [];
+  all[taskId].push(att);
+  return _saveAllAttachments(all);
+}
+function removeAttachment(taskId, attId) {
+  const all = _loadAllAttachments();
+  if (!all[taskId]) return;
+  all[taskId] = all[taskId].filter(a => a.id !== attId);
+  _saveAllAttachments(all);
+}
+
+// ── Helpers binario ⇄ base64 ───────────────────────────────────────
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+function blobToDataUrl(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(new Error('Read failed'));
+    r.readAsDataURL(blob);
+  });
+}
+function dataUrlToBlob(dataUrl) {
+  const [head, b64] = dataUrl.split(',');
+  const mime = (head.match(/data:([^;]+)/) || [null, 'application/octet-stream'])[1];
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+// ── Carpeta de Drive ─────────────────────────────────────────────
+// Busca (o crea) la carpeta "Molvo Studio - Adjuntos" donde se guardan
+// todos los archivos. El id se cachea en memoria + localStorage para
+// evitar consultas innecesarias.
+async function ensureMolvoDriveFolder() {
+  if (!accessToken) throw new Error('NO_AUTH');
+  if (_molvoDriveFolderId) return _molvoDriveFolderId;
+
+  // Cache local
+  const cached = (() => { try { return localStorage.getItem('molvo_drive_folder_id'); } catch(_) { return null; } })();
+  if (cached) {
+    try {
+      const r = await fetch('https://www.googleapis.com/drive/v3/files/' + cached + '?fields=id,trashed', {
+        headers: { 'Authorization': 'Bearer ' + accessToken }
+      });
+      if (r.ok) {
+        const j = await r.json();
+        if (!j.trashed) { _molvoDriveFolderId = j.id; return j.id; }
+      }
+    } catch(_) {}
+    try { localStorage.removeItem('molvo_drive_folder_id'); } catch(_) {}
+  }
+
+  // Buscar por nombre (solo encontrará la nuestra por el scope drive.file)
+  const q = "name='" + DRIVE_FOLDER_NAME + "' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+  const search = await fetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id,name)&pageSize=10', {
+    headers: { 'Authorization': 'Bearer ' + accessToken }
+  });
+  if (search.ok) {
+    const data = await search.json();
+    if (data.files && data.files.length) {
+      _molvoDriveFolderId = data.files[0].id;
+      try { localStorage.setItem('molvo_drive_folder_id', _molvoDriveFolderId); } catch(_) {}
+      return _molvoDriveFolderId;
+    }
+  }
+
+  // Crear nueva
+  const create = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' })
+  });
+  if (!create.ok) {
+    const errText = await create.text();
+    throw new Error('No se pudo crear la carpeta en Drive: ' + errText);
+  }
+  const cdata = await create.json();
+  _molvoDriveFolderId = cdata.id;
+  try { localStorage.setItem('molvo_drive_folder_id', _molvoDriveFolderId); } catch(_) {}
+  return _molvoDriveFolderId;
+}
+
+// ── Subir un archivo a Drive ─────────────────────────────────────
+// Acepta File (input) o Blob+meta. Devuelve el objeto attachment ya
+// listo para guardar en el índice local.
+async function uploadFileToDrive(taskId, file, opts = {}) {
+  if (!accessToken) throw new Error('NO_AUTH');
+  const folderId = await ensureMolvoDriveFolder();
+
+  const metadata = {
+    name: opts.name || file.name || ('archivo_' + Date.now()),
+    parents: [folderId],
+    appProperties: {
+      molvoSource: 'attachment',
+      taskId: taskId,
+      origin: opts.origin || 'upload'
+    }
+  };
+
+  // Multipart manual (simple, sin librerías). El cuerpo se construye
+  // como string + base64 del archivo; para archivos grandes (>10MB)
+  // sería mejor usar resumable upload, pero para casos normales esto
+  // funciona bien.
+  const buf = await (file.arrayBuffer ? file.arrayBuffer() : file);
+  const b64 = arrayBufferToBase64(buf);
+  const contentType = opts.type || file.type || 'application/octet-stream';
+
+  const boundary = '-------molvo-' + Math.random().toString(36).slice(2, 15);
+  const delim = '\r\n--' + boundary + '\r\n';
+  const closeDelim = '\r\n--' + boundary + '--';
+
+  const body =
+    delim +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delim +
+    'Content-Type: ' + contentType + '\r\n' +
+    'Content-Transfer-Encoding: base64\r\n\r\n' +
+    b64 +
+    closeDelim;
+
+  const resp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,mimeType,createdTime', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + accessToken,
+      'Content-Type': 'multipart/related; boundary=' + boundary
+    },
+    body: body
+  });
+
+  if (!resp.ok) {
+    let errMsg = 'HTTP ' + resp.status;
+    try {
+      const errJson = await resp.json();
+      errMsg = errJson?.error?.message || errMsg;
+    } catch(_) {}
+    throw new Error(errMsg);
+  }
+  const meta = await resp.json();
+  return {
+    id: meta.id,                       // mismo id que driveFileId para simplicidad
+    name: meta.name,
+    type: meta.mimeType || contentType,
+    size: parseInt(meta.size || buf.byteLength || 0),
+    driveFileId: meta.id,
+    origin: opts.origin || 'upload',
+    created: meta.createdTime || new Date().toISOString()
+  };
+}
+
+// ── Bajar contenido de Drive (con caché de sesión) ───────────────
+async function fetchDriveAttachmentDataUrl(driveFileId) {
+  if (_driveContentCache.has(driveFileId)) return _driveContentCache.get(driveFileId);
+  if (!accessToken) throw new Error('NO_AUTH');
+  const resp = await fetch('https://www.googleapis.com/drive/v3/files/' + driveFileId + '?alt=media', {
+    headers: { 'Authorization': 'Bearer ' + accessToken }
+  });
+  if (!resp.ok) throw new Error('Drive download failed (' + resp.status + ')');
+  const blob = await resp.blob();
+  const dataUrl = await blobToDataUrl(blob);
+  _driveContentCache.set(driveFileId, dataUrl);
+  return dataUrl;
+}
+
+// ── Borrar de Drive ──────────────────────────────────────────────
+async function deleteDriveFile(driveFileId) {
+  if (!accessToken) return false;
+  try {
+    const resp = await fetch('https://www.googleapis.com/drive/v3/files/' + driveFileId, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    _driveContentCache.delete(driveFileId);
+    // 204 = OK, 404 = ya borrado → ambos OK
+    return resp.ok || resp.status === 404;
+  } catch(e) {
+    console.warn('Drive delete failed:', e);
+    return false;
+  }
+}
+
+// ── Sincronizar índice local desde Drive ─────────────────────────
+// Se llama al cargar la app: trae todos los archivos creados por
+// Molvo Studio y reconstruye el mapa taskId → adjuntos. Permite que
+// los archivos estén disponibles en cualquier dispositivo donde el
+// usuario inicie sesión.
+async function syncAttachmentsFromDrive() {
+  if (!accessToken) return;
+  try {
+    const q = "appProperties has { key='molvoSource' and value='attachment' } and trashed=false";
+    let pageToken = null;
+    const allFiles = [];
+    do {
+      const url = 'https://www.googleapis.com/drive/v3/files?'
+        + 'q=' + encodeURIComponent(q)
+        + '&fields=' + encodeURIComponent('nextPageToken,files(id,name,size,mimeType,appProperties,createdTime)')
+        + '&pageSize=1000'
+        + (pageToken ? ('&pageToken=' + encodeURIComponent(pageToken)) : '');
+      const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } });
+      if (!resp.ok) {
+        console.warn('Sync de adjuntos falló:', resp.status, await resp.text());
+        return;
+      }
+      const data = await resp.json();
+      (data.files || []).forEach(f => allFiles.push(f));
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+
+    // Reconstruir índice: conservar entradas legacy (con dataUrl) que no
+    // están en Drive, agregar/actualizar entradas de Drive.
+    const all = _loadAllAttachments();
+    const driveById = new Map(allFiles.map(f => [f.id, f]));
+
+    // 1) Limpiar entradas de Drive que ya no existen (fueron borradas
+    //    en otro dispositivo)
+    Object.keys(all).forEach(taskId => {
+      all[taskId] = (all[taskId] || []).filter(a => {
+        if (!a.driveFileId) return true; // legacy → conservar
+        return driveById.has(a.driveFileId);
+      });
+    });
+
+    // 2) Agregar archivos de Drive que no están en el índice
+    allFiles.forEach(f => {
+      const taskId = f.appProperties && f.appProperties.taskId;
+      if (!taskId) return;
+      if (!all[taskId]) all[taskId] = [];
+      const existing = all[taskId].find(a => a.driveFileId === f.id);
+      if (existing) {
+        // Refrescar metadata por si cambió el nombre
+        existing.name = f.name;
+        existing.size = parseInt(f.size || existing.size || 0);
+        existing.type = f.mimeType || existing.type;
+        return;
+      }
+      all[taskId].push({
+        id: f.id,
+        name: f.name,
+        type: f.mimeType || 'application/octet-stream',
+        size: parseInt(f.size || 0),
+        driveFileId: f.id,
+        origin: (f.appProperties && f.appProperties.origin) || 'upload',
+        created: f.createdTime || new Date().toISOString()
+      });
+    });
+
+    _saveAllAttachments(all);
+    // Refrescar UI si está abierta
+    if (typeof activeTaskId !== 'undefined' && activeTaskId && typeof openTask === 'function') {
+      // Re-render task detail sin perder scroll: solo refrescar sección de adjuntos
+      const el = document.querySelector('#detail-panel');
+      if (el) openTask(activeTaskId);
+    }
+  } catch(e) {
+    console.warn('syncAttachmentsFromDrive error:', e);
+  }
+}
+
+function triggerAttachUpload(taskId) {
+  if (_blockIfNotEditable(taskId, 'No puedes subir archivos a una tarea que no está asignada a ti')) return;
+  const input = document.getElementById('attach-input-'+taskId);
+  if (input) input.click();
+}
+
+async function handleAttachUpload(taskId, fileList) {
+  if (_blockIfNotEditable(taskId, 'No puedes subir archivos a una tarea que no está asignada a ti')) return;
+  if (!fileList || !fileList.length) return;
+  const files = [...fileList];
+
+  // Verificar sesión antes de subir
+  if (!accessToken) {
+    showToast('Sesión expirada. Cierra sesión y vuelve a entrar para subir a Drive.','error');
+    return;
+  }
+
+  // Loading state
+  showToast('Subiendo '+files.length+' archivo(s) a Drive...','info');
+  let added = 0, skipped = 0, errors = 0;
+
+  // Subir secuencialmente para no saturar la cuota de Drive
+  for (const file of files) {
+    if (file.size > ATTACH_MAX_BYTES) {
+      skipped++;
+      continue;
+    }
+    try {
+      const att = await uploadFileToDrive(taskId, file);
+      const ok = addAttachmentObject(taskId, att);
+      if (ok) added++; else errors++;
+    } catch(e) {
+      console.error('Drive upload failed for', file.name, e);
+      errors++;
+      // Si es por scope insuficiente, avisar claramente
+      if (/scope|insufficient|401|403/i.test(e.message||'')) {
+        showToast('Falta permiso de Google Drive. Cierra sesión y vuelve a entrar para autorizarlo.','error');
+        break;
+      }
+    }
+  }
+
+  finishAttach(taskId, added, skipped, errors);
+}
+
+function finishAttach(taskId, added, skipped, errors) {
+  // Limpiar inputs (permite re-subir el mismo archivo)
+  const input1 = document.getElementById('attach-input-'+taskId);
+  if (input1) input1.value = '';
+  const input2 = document.getElementById('email-attach-input');
+  if (input2) input2.value = '';
+
+  const parts = [];
+  if (added) parts.push(added+' subido(s) a Drive ✓');
+  if (skipped) parts.push(skipped+' omitido(s) (>25MB)');
+  if (errors) parts.push(errors+' con error');
+  if (parts.length) {
+    const type = errors ? 'error' : (added ? 'success' : 'info');
+    showToast(parts.join(' · '), type);
+  }
+
+  // Refrescar la vista actual
+  if (typeof openTask === 'function' && activeTaskId === taskId) openTask(taskId);
+  // Refrescar la lista en el modal de correo si está abierto
+  const emailAttachWrap = document.getElementById('email-attach-list');
+  if (emailAttachWrap) emailAttachWrap.innerHTML = renderEmailAttachmentsList(taskId);
+}
+
+async function deleteAttachment(taskId, attId) {
+  if (_blockIfNotEditable(taskId, 'No puedes eliminar archivos de una tarea que no está asignada a ti')) return;
+  if (!confirm('¿Eliminar este archivo adjunto?\nSe borrará también de Google Drive y no se puede deshacer.')) return;
+  const att = getTaskAttachments(taskId).find(a => a.id === attId);
+  // Borrar de Drive si corresponde
+  if (att && att.driveFileId) {
+    const ok = await deleteDriveFile(att.driveFileId);
+    if (!ok) {
+      // El archivo pudo no haberse borrado de Drive; avisar pero igual
+      // quitar del índice local para no dejarlo huérfano si el usuario
+      // insiste en borrarlo.
+      showToast('No se pudo borrar de Drive (puede que ya estuviera eliminado)','info');
+    }
+  }
+  removeAttachment(taskId, attId);
+  if (typeof openTask === 'function' && activeTaskId === taskId) openTask(taskId);
+  const emailAttachWrap = document.getElementById('email-attach-list');
+  if (emailAttachWrap) emailAttachWrap.innerHTML = renderEmailAttachmentsList(taskId);
+  showToast('Archivo eliminado ✓','info');
+}
+
+function _attachIcon(type) {
+  if (!type) return '📎';
+  if (type.startsWith('image/')) return '🖼';
+  if (type === 'application/pdf') return '📄';
+  if (type.includes('word') || type.includes('document')) return '📝';
+  if (type.includes('sheet') || type.includes('excel') || type === 'text/csv') return '📊';
+  if (type.includes('zip') || type.includes('compressed')) return '🗜';
+  if (type.startsWith('video/')) return '🎬';
+  if (type.startsWith('audio/')) return '🎵';
+  if (type.startsWith('text/')) return '📃';
+  return '📎';
+}
+function _fmtBytes(b) {
+  if (!b) return '—';
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return Math.round(b/1024) + ' KB';
+  return (b/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function renderTaskAttachmentsList(taskId, canEdit) {
+  if (canEdit === undefined) canEdit = canEditTask(taskId); // default seguro
+  const items = getTaskAttachments(taskId);
+  if (!items.length) {
+    if (canEdit) {
+      return `<div onclick="triggerAttachUpload('${taskId}')" class="attach-drop">
+        📎 Sin archivos adjuntos · Clic para subir a Google Drive
+      </div>`;
+    }
+    return `<div style="font-size:10px;color:var(--lgray);padding:8px 0;font-style:italic">Sin archivos adjuntos.</div>`;
+  }
+  return `<div style="display:flex;flex-direction:column;gap:6px">${items.map(a => {
+    const isDrive = !!a.driveFileId;
+    const isInvoice = a.origin === 'invoice';
+    const badges = [];
+    if (isInvoice) badges.push(`<span style="font-size:9px;color:var(--gold);background:#c9a96e22;padding:1px 5px;border-radius:3px">Factura</span>`);
+    badges.push(isDrive
+      ? `<span style="font-size:9px;color:var(--green);background:#2e6b4722;padding:1px 5px;border-radius:3px">☁ Drive</span>`
+      : `<span style="font-size:9px;color:var(--warn);background:#b8782022;padding:1px 5px;border-radius:3px" title="Guardado solo en este navegador">📱 Local</span>`);
+    return `<div class="attach-card">
+      <div class="attach-icon">${_attachIcon(a.type)}</div>
+      <div class="attach-info">
+        <div class="attach-name" title="${a.name}">${a.name} <span style="margin-left:4px;display:inline-flex;gap:3px">${badges.join('')}</span></div>
+        <div class="attach-meta">${_fmtBytes(a.size)} · ${(a.type||'archivo')}</div>
+      </div>
+      <div class="attach-actions">
+        <button class="attach-btn" onclick="previewAttachment('${taskId}','${a.id}')" title="Ver">👁 Ver</button>
+        <button class="attach-btn" onclick="downloadAttachment('${taskId}','${a.id}')" title="Descargar">⬇</button>
+        ${canEdit ? `<button class="attach-btn danger" onclick="deleteAttachment('${taskId}','${a.id}')" title="Eliminar">✕</button>` : ''}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+// Helper: obtener el dataUrl de un adjunto, ya sea desde Drive o
+// desde el campo legacy `dataUrl` guardado en localStorage. Muestra
+// un loading mientras Drive responde.
+async function resolveAttachmentDataUrl(att) {
+  if (att.dataUrl) return att.dataUrl;
+  if (att.driveFileId) return await fetchDriveAttachmentDataUrl(att.driveFileId);
+  throw new Error('Archivo sin contenido (ni Drive ni local)');
+}
+
+async function previewAttachment(taskId, attId) {
+  const att = getTaskAttachments(taskId).find(a => a.id === attId);
+  if (!att) return;
+
+  // Modal loading mientras Drive responde
+  document.getElementById('modal-body').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:18px">${att.name}</div>
+        <div style="font-size:10px;color:var(--gray)">${_fmtBytes(att.size)} · ${att.type||'archivo'}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-secondary" onclick="closePreviewModal()">✕ Cerrar</button>
+      </div>
+    </div>
+    <div style="padding:40px;text-align:center;color:var(--gray);font-size:11px">
+      Descargando desde Google Drive…
+    </div>`;
+  document.getElementById('modal-body').classList.add('wide');
+  document.getElementById('modal-overlay').classList.add('open');
+
+  let dataUrl;
+  try {
+    dataUrl = await resolveAttachmentDataUrl(att);
+  } catch(e) {
+    document.getElementById('modal-body').querySelector('div:last-child').innerHTML =
+      `<div style="padding:30px;text-align:center;color:var(--red);font-size:12px">No se pudo cargar el archivo: ${e.message||e}</div>`;
+    return;
+  }
+
+  const isImg = att.type && att.type.startsWith('image/');
+  const isPdf = att.type === 'application/pdf';
+  const isText = att.type && (att.type.startsWith('text/') || att.type.includes('json'));
+  const isVideo = att.type && att.type.startsWith('video/');
+  const isAudio = att.type && att.type.startsWith('audio/');
+
+  let previewHtml = '';
+  if (isImg) {
+    previewHtml = `<img src="${dataUrl}" alt="${att.name}" class="preview-img">`;
+  } else if (isPdf) {
+    previewHtml = `<iframe src="${dataUrl}" class="preview-pdf"></iframe>`;
+  } else if (isVideo) {
+    previewHtml = `<video src="${dataUrl}" controls style="max-width:100%;max-height:70vh;display:block;margin:0 auto;border-radius:6px;border:0.5px solid var(--border)"></video>`;
+  } else if (isAudio) {
+    previewHtml = `<audio src="${dataUrl}" controls style="width:100%;margin:20px 0"></audio>`;
+  } else if (isText) {
+    try {
+      const b64 = dataUrl.split(',')[1];
+      const text = atob(b64);
+      previewHtml = `<pre style="background:var(--cream);padding:14px;border-radius:6px;font-size:11px;max-height:70vh;overflow:auto;white-space:pre-wrap;word-break:break-word">${text.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</pre>`;
+    } catch(e) {
+      previewHtml = `<div style="padding:20px;text-align:center;color:var(--gray)">No se puede mostrar este archivo. Usa "Descargar" para verlo.</div>`;
+    }
+  } else {
+    previewHtml = `<div style="padding:30px;text-align:center;color:var(--gray)">
+      <div style="font-size:48px;margin-bottom:10px">${_attachIcon(att.type)}</div>
+      <div style="font-size:13px;margin-bottom:6px">${att.name}</div>
+      <div style="font-size:11px;color:var(--lgray)">No hay vista previa para este tipo de archivo.<br>Usa "Descargar" para abrirlo en tu computadora.</div>
+    </div>`;
+  }
+
+  document.getElementById('modal-body').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:18px">${att.name}</div>
+        <div style="font-size:10px;color:var(--gray)">${_fmtBytes(att.size)} · ${att.type||'archivo'}${att.driveFileId?' · <span style="color:var(--gold)">Drive</span>':''}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-secondary" onclick="downloadAttachment('${taskId}','${attId}')">⬇ Descargar</button>
+        <button class="btn-secondary" onclick="closePreviewModal()">✕ Cerrar</button>
+      </div>
+    </div>
+    <div>${previewHtml}</div>`;
+}
+
+function closePreviewModal() {
+  document.getElementById('modal-body').classList.remove('wide');
+  closeModal();
+}
+
+async function downloadAttachment(taskId, attId) {
+  const att = getTaskAttachments(taskId).find(a => a.id === attId);
+  if (!att) return;
+  let dataUrl;
+  try {
+    if (att.dataUrl) {
+      dataUrl = att.dataUrl;
+    } else if (att.driveFileId) {
+      showToast('Descargando desde Drive...','info');
+      dataUrl = await fetchDriveAttachmentDataUrl(att.driveFileId);
+    } else {
+      showToast('Archivo sin contenido accesible','error');
+      return;
+    }
+  } catch(e) {
+    showToast('No se pudo descargar: '+(e.message||e),'error');
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = att.name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CORREO CON ADJUNTOS
+// ═══════════════════════════════════════════════════════════════════
+function renderEmailAttachmentsList(taskId) {
+  const items = getTaskAttachments(taskId);
+  if (!items.length) {
+    return `<div style="font-size:10px;color:var(--lgray);padding:8px 0;font-style:italic">Sin archivos adjuntos. Sube uno con el botón de arriba.</div>`;
+  }
+  return `<div style="display:flex;flex-direction:column;gap:5px">${items.map(a => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;border:0.5px solid var(--border);border-radius:5px;background:var(--white)">
+      <span style="font-size:14px">${_attachIcon(a.type)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.name}</div>
+        <div style="font-size:9px;color:var(--gray)">${_fmtBytes(a.size)}</div>
+      </div>
+      <button onclick="deleteAttachment('${taskId}','${a.id}')" title="Quitar" style="border:none;background:none;cursor:pointer;color:var(--lgray);font-size:13px;padding:2px 6px">✕</button>
+    </div>`).join('')}</div>`;
+}
+
+function triggerEmailAttachUpload(taskId) {
+  const input = document.getElementById('email-attach-input');
+  if (input) input.click();
+}
 </script>
 </body>
 </html>
