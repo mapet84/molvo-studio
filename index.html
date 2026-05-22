@@ -561,7 +561,7 @@ const CLIENT_ID = '893121171958-p34ap7ll9re2etcd90la4vgmu61r39b4.apps.googleuser
 const API_KEY   = 'AIzaSyBNjGDDr-pao-yDcOuzFsb6Qi-STi65Rvc';
 const SHEET_ID  = '1KraykEXxIz99xymH9KSoka5MjodhqA0LMh8cklwU7tY';
 const SCOPES    = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events';
-const DISCOVERY = ['https://sheets.googleapis.com/$discovery/rest?version=v4', 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'];
+const DISCOVERY = ['https://sheets.googleapis.com/$discovery/rest?version=v4'];
 
 const PHASE_COLORS = ['#3a5f8a','#5a7a4a','#8a5a3a','#6a3a8a','#8a3a5a','#3a7a7a','#6a6a3a'];
 const STATUS_COLORS = {'En progreso':'#3a5f8a','Brief':'#5a7a4a','Cotizacion':'#8a5a3a','En aprobacion':'#6a3a8a','Pre-Produccion':'#3a5f8a','Produccion':'#2a4f7a','Post-Produccion':'#3a7a7a','Atrasado':'#b84444','En riesgo':'#c4892a','Completado':'#3d7a5a','Por iniciar':'#8a8680'};
@@ -575,30 +575,35 @@ let activeProjectId = null, activeTaskId = null, activeFieldKey = null;
 let selectedClientId = null;
 
 // ----------------------------------------
-// True once gapi.client.calendar is available. Calendar is optional —
-// if its discovery doc or scope fails to load (e.g. the API isn't
-// enabled on the Cloud project), login still works and "Enviar cita"
-// will surface a clear error instead of crashing the app.
+// True once gapi.client.calendar is available. Calendar is loaded on
+// demand (the first time "Enviar cita" is clicked) so a misconfigured
+// Calendar API never blocks login.
 let calendarReady = false;
 let gapiInited = false;
 
 async function _initGapiClient() {
-  // Try full init (Sheets + Calendar) first.
   try {
     await gapi.client.init({ apiKey: API_KEY, discoveryDocs: DISCOVERY });
-    calendarReady = !!(gapi.client && gapi.client.calendar);
+    gapiInited = true;
+    return true;
   } catch (e) {
-    console.warn('gapi.client.init full failed, retrying with Sheets only:', e);
-    try {
-      await gapi.client.init({ apiKey: API_KEY, discoveryDocs: [DISCOVERY[0]] });
-      calendarReady = false;
-    } catch (e2) {
-      console.error('gapi.client.init failed entirely:', e2);
-      return false;
-    }
+    console.error('gapi.client.init failed:', e);
+    return false;
   }
-  gapiInited = true;
-  return true;
+}
+
+async function ensureCalendarLoaded() {
+  if (calendarReady && gapi?.client?.calendar) return {ok:true};
+  if (!gapi?.client) return {ok:false, reason:'gapi-not-ready', message:'La API de Google aún no está cargada. Recarga la página.'};
+  try {
+    await gapi.client.load('calendar', 'v3');
+    if (gapi.client.calendar) { calendarReady = true; return {ok:true}; }
+    return {ok:false, reason:'load-empty', message:'No se pudo cargar Google Calendar (la API no respondió).'};
+  } catch (e) {
+    console.error('gapi.client.load calendar failed:', e);
+    const msg = e?.result?.error?.message || e?.message || String(e);
+    return {ok:false, reason:'load-error', message:msg};
+  }
 }
 
 // Resolves to true if gapi.client is ready, false otherwise.
@@ -743,8 +748,18 @@ async function molvoLogin() {
 async function connectGoogle() {
   const btn = document.getElementById('btn-google-connect');
   if (btn) btn.disabled = true;
-  await loadGapi();
-  await loadGis();
+  const gapiOk = await loadGapi();
+  if (!gapiOk) {
+    if (btn) btn.disabled = false;
+    showToast('No se pudo cargar la API de Google. Revisa tu conexión o desactiva bloqueadores.', 'error');
+    return;
+  }
+  const gisOk = await loadGis();
+  if (!gisOk) {
+    if (btn) btn.disabled = false;
+    showToast('No se pudo cargar Google Identity. Revisa tu conexión o desactiva bloqueadores.', 'error');
+    return;
+  }
   tokenClient.requestAccessToken({ prompt: '' });
 }
 
@@ -1847,7 +1862,7 @@ function openTask(taskId) {
     <div style="display:flex;gap:8px;padding-top:14px;border-top:0.5px solid var(--border);flex-wrap:wrap">
       <button class="complete-btn ${btnClass}" onclick="tryComplete('${task.id}','${phColor}')" style="flex:1">${btnLabel}</button>
       <button onclick="openEditTaskModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--border);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--gray)">✎ Editar</button>
-      ${(()=>{const catTask=catalogTareas?catalogTareas.find(ct=>ct.nombre===task.nombre):null; return (catTask?.habilitar_cita?`<button onclick="openCalendarInviteModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">📅 Cita</button>`:'')+(catTask?.habilitar_email?`<button onclick="openEmailModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">✉ Correo</button>`:'')})()} 
+      ${(()=>{const catTask=catalogTareas?catalogTareas.find(ct=>ct.nombre===task.nombre):null; const showCita=!catTask||catTask.habilitar_cita!==false; const showMail=!catTask||catTask.habilitar_email!==false; return (showCita?`<button onclick="openCalendarInviteModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">📅 Cita</button>`:'')+(showMail?`<button onclick="openEmailModal('${task.id}')" style="padding:9px 14px;border:0.5px solid var(--accent);border-radius:6px;background:none;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;color:var(--accent)">✉ Correo</button>`:'')})()} 
     </div>`;
 
   wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -2179,47 +2194,22 @@ const STANDARD_TASKS = [
   {fase:'Cierre de Proyecto',nombre:'Cierre de mes',rol:'Finanzas',start_day:55,duracion:40,campos:[{label:'Evaluación cuentas por cobrar',tipo:'textarea',req:true},{label:'Evaluación de utilidad',tipo:'textarea',req:true}]},
 ];
 
-function calcEstimatedDelivery() {
-  const startEl = document.getElementById('np-start');
-  const typeEl = document.getElementById('np-type');
-  const outEl = document.getElementById('np-estimated');
-  if (!startEl||!outEl) return;
-  const startVal = startEl.value;
-  if (!startVal) { if(outEl) outEl.textContent='Selecciona fecha de inicio'; return; }
-
-  const tipo = typeEl ? typeEl.value : '';
-  // Get tasks STRICTLY from the configured tipo. Only fall back to the
-  // catalog/standard list when the type isn't defined at all.
-  let tasks = [];
-  const tipoKey = findTipoKey(tipo);
-  if (tipoKey !== null) {
-    tasks = tipoTasks[tipoKey] || [];
-  } else if (catalogTareas && catalogTareas.length) {
-    tasks = catalogTareas;
-  } else {
-    tasks = STANDARD_TASKS;
-  }
-
-  if (!tasks.length) { outEl.textContent='Sin tareas en la plantilla'; return; }
-
-  // Calculate total working days needed
+// Shared schedule projector. Given a start date string (YYYY-MM-DD) and
+// a list of tasks (each with `horas` or `duracion`), returns the system-
+// estimated end date, total hours and required working-day count. Used
+// by the new-project live preview AND the calibration modal.
+function computeScheduleFromTasks(startVal, tasks) {
+  if (!startVal || !tasks) return null;
   const hpd = hoursPerDay();
-  let totalHours = tasks.reduce((s,t) => s + (parseInt(t.horas||0)||parseInt(t.duracion||0)*hpd||8), 0);
+  const totalHours = tasks.reduce((s,t) => s + (parseInt(t.horas||0)||parseInt(t.duracion||0)*hpd||0), 0);
   const target = Math.ceil(totalHours / hpd);
   const dayNames = ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
-
-  // Parse YYYY-MM-DD as a LOCAL date so day-of-week and the YYYY-MM-DD
-  // we feed to isHoliday() never disagree across timezones.
   const [sy, sm, sd_] = startVal.split('-').map(Number);
   const d = new Date(sy, sm-1, sd_);
   const pad = n => String(n).padStart(2,'0');
   const ymd = dt => dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());
-
-  let workDays = 0;
-  let calDays = 0;
-  // Walk forward starting AT startVal (inclusive). The start date itself
-  // counts as the first working day if it is one — the previous version
-  // skipped it, which made every estimate land one workday too late.
+  let workDays = 0, calDays = 0;
+  if (target <= 0) return {estimated: new Date(d), totalHours: 0, target: 0, calDays: 0};
   while (true) {
     const dateStr = ymd(d);
     const sch = workSchedule[dayNames[d.getDay()]];
@@ -2231,25 +2221,48 @@ function calcEstimatedDelivery() {
     if (workDays >= target) break;
     d.setDate(d.getDate()+1);
     calDays++;
-    if (calDays > 730) break; // safety
+    if (calDays > 730) break;
   }
+  return {estimated: new Date(d), totalHours, target, calDays};
+}
 
-  const estimated = new Date(d);
+function calcEstimatedDelivery() {
+  const startEl = document.getElementById('np-start');
+  const typeEl = document.getElementById('np-type');
+  const outEl = document.getElementById('np-estimated');
+  if (!startEl||!outEl) return;
+  const startVal = startEl.value;
+  if (!startVal) { if(outEl) outEl.textContent='Selecciona fecha de inicio'; return; }
+
+  const tipo = typeEl ? typeEl.value : '';
+  let tasks = [];
+  const tipoKey = findTipoKey(tipo);
+  if (tipoKey !== null) {
+    tasks = tipoTasks[tipoKey] || [];
+  } else if (catalogTareas && catalogTareas.length) {
+    tasks = catalogTareas;
+  } else {
+    tasks = STANDARD_TASKS;
+  }
+  if (!tasks.length) { outEl.textContent='Sin tareas en la plantilla'; return; }
+
+  const sched = computeScheduleFromTasks(startVal, tasks);
+  if (!sched) { outEl.textContent='—'; return; }
+  const fmt = sched.estimated.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const [sy, sm, sd_] = startVal.split('-').map(Number);
   const startDate = new Date(sy, sm-1, sd_);
-  const fmt = estimated.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
-  const diff = Math.round((estimated - startDate)/(1000*60*60*24));
+  const diff = Math.round((sched.estimated - startDate)/(1000*60*60*24));
 
-  outEl.innerHTML = `<b style="color:var(--black)">${fmt}</b> <span style="color:var(--gray);font-size:10px">(~${diff} días calendario · ${target} días laborales · ${Math.round(totalHours)}h totales)</span>`;
+  outEl.innerHTML = `<b style="color:var(--black)">${fmt}</b> <span style="color:var(--gray);font-size:10px">(~${diff} días calendario · ${sched.target} días laborales · ${Math.round(sched.totalHours)}h totales)</span>`;
 
-  // Also check against client delivery date
   const endEl = document.getElementById('np-end');
   if (endEl && endEl.value) {
     const [ey, em, ed] = endEl.value.split('-').map(Number);
     const clientDate = new Date(ey, em-1, ed);
-    if (estimated > clientDate) {
-      outEl.innerHTML += `<div style="margin-top:4px;font-size:10px;color:var(--red)">⚠ La estimación supera la fecha comprometida con el cliente en ${Math.round((estimated-clientDate)/(1000*60*60*24))} días.</div>`;
+    if (sched.estimated > clientDate) {
+      outEl.innerHTML += `<div style="margin-top:4px;font-size:10px;color:var(--red)">⚠ La estimación supera la fecha comprometida con el cliente en ${Math.round((sched.estimated-clientDate)/(1000*60*60*24))} días. Al crear el proyecto podrás calibrar las horas para ajustarlo.</div>`;
     } else {
-      const margin = Math.round((clientDate-estimated)/(1000*60*60*24));
+      const margin = Math.round((clientDate-sched.estimated)/(1000*60*60*24));
       outEl.innerHTML += `<div style="margin-top:4px;font-size:10px;color:var(--green)">✓ Hay un margen de ${margin} días antes de la fecha del cliente.</div>`;
     }
   }
@@ -2272,46 +2285,71 @@ async function createProject() {
     responsable_id: '',
     creado_en: now
   };
+
+  // Resolve the task template for this tipo (tolerant to accents/case).
+  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
+  const tipoKey = findTipoKey(proj.tipo);
+  let activeTasks;
+  if (tipoKey !== null) {
+    activeTasks = tipoTasks[tipoKey] || [];
+    if (proj.tipo !== tipoKey) proj.tipo = tipoKey;
+  } else {
+    showToast('El tipo "'+proj.tipo+'" no está configurado en Tipos de proyecto. Usando plantilla estándar.', 'error');
+    activeTasks = templateTasks || STANDARD_TASKS;
+  }
+
+  // Build a normalized "plan" — one row per future task with editable
+  // horas. We work off this in-memory list so the calibration modal can
+  // mutate it without touching the original tipo template.
+  const plan = activeTasks.map(tpl => {
+    const baseH = (tpl.horas != null ? Number(tpl.horas) : (tpl.duracion != null ? Number(tpl.duracion) : 8));
+    return {
+      nombre: tpl.nombre,
+      fase: tpl.fase || '',
+      rol: tpl.rol || (Array.isArray(tpl.roles) ? tpl.roles.filter(Boolean)[0] : '') || '',
+      start_day: tpl.start_day || 0,
+      horas: baseH,
+      originalHoras: baseH,
+      campos: tpl.campos || null
+    };
+  });
+
+  // If the system estimate beats the client commitment date → persist
+  // straight away. Otherwise, open the calibration modal so the user can
+  // trim hours per task and bring the estimate inside the deadline.
+  if (plan.length && proj.fecha_fin && proj.fecha_inicio) {
+    const sched = computeScheduleFromTasks(proj.fecha_inicio, plan);
+    const [ey, em, ed] = proj.fecha_fin.split('-').map(Number);
+    const clientDate = new Date(ey, em-1, ed);
+    if (sched && sched.estimated > clientDate) {
+      openTaskCalibrationModal(proj, plan);
+      return;
+    }
+  }
+
+  await persistNewProject(proj, plan);
+}
+
+async function persistNewProject(proj, plan) {
   closeModal();
   showToast('Creando proyecto y tareas...', 'info');
   const projValues = SHEET_HEADERS.proyectos.map(h => proj[h] || '');
   const ok = await sheetsAppend('proyectos', projValues);
   if (!ok) return;
   DB.proyectos.push(proj);
-  // Build all tasks and fields in memory, then batch-write to Sheet.
-  // Tasks come ONLY from the template defined for this project's tipo
-  // (phase assignment lives on the project type now, not the catalog).
-  if (!tipoTasks) tipoTasks = getDefaultTipoTasks();
-  const tipoKey = findTipoKey(proj.tipo);
-  let activeTasks;
-  if (tipoKey !== null) {
-    // The type IS configured — use its tasks exactly as defined,
-    // even if the user intentionally left it short or empty.
-    activeTasks = tipoTasks[tipoKey] || [];
-    // Normalize the stored tipo to the canonical key so future lookups
-    // (e.g. when listing/filtering) match without going through findTipoKey.
-    if (proj.tipo !== tipoKey) proj.tipo = tipoKey;
-    if (!activeTasks.length) {
-      showToast('El tipo "'+proj.tipo+'" no tiene tareas configuradas. El proyecto se creó sin tareas.', 'info');
-    }
-  } else {
-    // Truly unknown type — fall back to a usable template and warn the user.
-    showToast('El tipo "'+proj.tipo+'" no está configurado en Tipos de proyecto. Usando plantilla estándar.', 'error');
-    activeTasks = templateTasks || STANDARD_TASKS;
+  const now = proj.creado_en || new Date().toISOString();
+
+  if (!plan.length) {
+    showToast('El tipo "'+proj.tipo+'" no tiene tareas configuradas. El proyecto se creó sin tareas.', 'info');
   }
 
   const taskRows = [];
   const fieldRows = [];
-  for (const tpl of activeTasks) {
+  for (const tpl of plan) {
     const taskId = genId();
-    // Tipo tasks store roles[]/horas; standard tasks store rol/duracion. Normalize both.
-    const rol = tpl.rol || (Array.isArray(tpl.roles) ? tpl.roles.filter(Boolean)[0] : '') || '';
-    const dur = (tpl.horas != null ? tpl.horas : (tpl.duracion != null ? tpl.duracion : 8));
-    const task = {id:taskId, proyecto_id:id, fase:tpl.fase||'', nombre:tpl.nombre, rol, usuario_id:'', start_day:String(tpl.start_day||0), duracion:String(dur), done:'false', creado_en:now};
+    const task = {id:taskId, proyecto_id:proj.id, fase:tpl.fase||'', nombre:tpl.nombre, rol:tpl.rol, usuario_id:'', start_day:String(tpl.start_day||0), duracion:String(tpl.horas||8), done:'false', creado_en:now};
     taskRows.push(SHEET_HEADERS.tareas.map(h => task[h] || ''));
     DB.tareas.push(task);
-    // Fields: use the task's own campos, or fall back to the catalog
-    // definition (matched by name) so fields stay managed in the catalog.
     let campos = (tpl.campos && tpl.campos.length) ? tpl.campos : null;
     if (!campos) {
       const catTask = (catalogTareas||[]).find(ct => ct.nombre === tpl.nombre);
@@ -2325,7 +2363,6 @@ async function createProject() {
       DB.campos_tarea.push(field);
     }
   }
-  // Single batch write for all tasks, then chunks for all fields
   if (taskRows.length) {
     showToast('Guardando tareas en Google Sheets...', 'info');
     try { await sheetsBatchAppend('tareas', taskRows); } catch(e) { console.warn('tareas batch warn:', e); }
@@ -2339,10 +2376,116 @@ async function createProject() {
   }
   renderProjectSelector();
   renderOverview();
-  loadProject(id);
+  loadProject(proj.id);
   showToast('Proyecto creado con '+taskRows.length+' tareas ✓', 'success');
-  // Trigger assignment modal for fases 1-3
-  setTimeout(() => openResourceAssignmentModal(id, 'early'), 600);
+  setTimeout(() => openResourceAssignmentModal(proj.id, 'early'), 600);
+}
+
+// ── Calibración de tareas ─────────────────────────────────────────────
+// Shown when the system-estimated end date overshoots the client date.
+// Lets the user trim horas per task and shows the recalculated estimate
+// live. Reuses computeScheduleFromTasks so the math matches the preview.
+let _calibProj = null;
+let _calibPlan = null;
+
+function openTaskCalibrationModal(proj, plan) {
+  _calibProj = proj;
+  _calibPlan = plan;
+  const [ey, em, ed] = proj.fecha_fin.split('-').map(Number);
+  const clientDate = new Date(ey, em-1, ed);
+  const clientFmt = clientDate.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+
+  // Group tasks by phase for readability.
+  const byPhase = {};
+  plan.forEach((p, i) => { (byPhase[p.fase || '—'] = byPhase[p.fase || '—'] || []).push({...p, _idx: i}); });
+
+  const phaseBlocks = Object.entries(byPhase).map(([fase, rows]) => `
+    <tr style="background:var(--cream)"><td colspan="4" style="padding:6px 10px;font-family:'Cormorant Garamond',serif;font-size:13px;color:var(--gray)">${fase}</td></tr>
+    ${rows.map(p => `<tr style="border-top:0.5px solid var(--border)">
+      <td style="padding:7px 10px">${p.nombre}</td>
+      <td style="padding:7px 10px;color:var(--gray);font-size:10px">${p.rol||'—'}</td>
+      <td style="padding:7px 10px;text-align:right;color:var(--gray);font-family:'DM Mono',monospace">${p.originalHoras}h</td>
+      <td style="padding:7px 10px;text-align:right">
+        <input type="number" min="0" step="0.5" value="${p.horas}" oninput="updateCalibHours(${p._idx}, this.value)" style="width:80px;padding:5px 8px;border:0.5px solid var(--border);border-radius:4px;font-family:'DM Mono',monospace;font-size:11px;text-align:right;background:var(--white)">
+        <span style="font-size:10px;color:var(--gray);margin-left:4px">h</span>
+      </td>
+    </tr>`).join('')}
+  `).join('');
+
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-title">Calibración de tareas</div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:14px;line-height:1.5">
+      Con la plantilla actual el proyecto terminaría <b id="cal-est-date" style="color:var(--red)">—</b>, pero el cliente lo necesita para el <b>${clientFmt}</b>. Reduce las horas asignadas a las tareas que puedas comprimir hasta que la fecha estimada quede dentro de la fecha del cliente. Estos ajustes aplican solo a este proyecto; la plantilla del tipo no se modifica.
+    </div>
+    <div id="cal-summary" style="display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap;font-size:11px;margin-bottom:12px;padding:12px 14px;background:var(--cream);border-radius:6px"></div>
+    <div style="max-height:48vh;overflow-y:auto;border:0.5px solid var(--border);border-radius:6px">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead style="position:sticky;top:0;background:var(--white);box-shadow:0 0.5px 0 var(--border)">
+          <tr>
+            <th style="text-align:left;padding:9px 10px;font-weight:400;color:var(--gray);font-size:10px;letter-spacing:0.07em;text-transform:uppercase">Tarea</th>
+            <th style="text-align:left;padding:9px 10px;font-weight:400;color:var(--gray);font-size:10px;letter-spacing:0.07em;text-transform:uppercase">Rol</th>
+            <th style="text-align:right;padding:9px 10px;font-weight:400;color:var(--gray);font-size:10px;letter-spacing:0.07em;text-transform:uppercase">Original</th>
+            <th style="text-align:right;padding:9px 10px;font-weight:400;color:var(--gray);font-size:10px;letter-spacing:0.07em;text-transform:uppercase">Ajustado</th>
+          </tr>
+        </thead>
+        <tbody>${phaseBlocks}</tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-secondary" onclick="resetCalibPlan()">Restaurar valores</button>
+      <button class="btn-primary" onclick="confirmCalibAndCreate()">Crear proyecto con estos ajustes</button>
+    </div>`;
+  document.getElementById('modal-body').classList.add('wide');
+  document.getElementById('modal-overlay').classList.add('open');
+  recomputeCalibSummary();
+}
+
+function updateCalibHours(idx, val) {
+  if (!_calibPlan || !_calibPlan[idx]) return;
+  const h = Math.max(0, parseFloat(val) || 0);
+  _calibPlan[idx].horas = h;
+  recomputeCalibSummary();
+}
+
+function recomputeCalibSummary() {
+  if (!_calibProj || !_calibPlan) return;
+  const sched = computeScheduleFromTasks(_calibProj.fecha_inicio, _calibPlan);
+  const [ey, em, ed] = _calibProj.fecha_fin.split('-').map(Number);
+  const clientDate = new Date(ey, em-1, ed);
+  const ok = sched && sched.estimated <= clientDate;
+  const fmt = sched ? sched.estimated.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}) : '—';
+  const dateEl = document.getElementById('cal-est-date');
+  if (dateEl) { dateEl.textContent = fmt; dateEl.style.color = ok ? 'var(--green)' : 'var(--red)'; }
+  const sumEl = document.getElementById('cal-summary');
+  if (sumEl) {
+    const totalOrig = _calibPlan.reduce((s,p)=>s+Number(p.originalHoras||0), 0);
+    const totalNew = _calibPlan.reduce((s,p)=>s+Number(p.horas||0), 0);
+    const saved = totalOrig - totalNew;
+    const cell = (label, val, color) => `<div><div style="color:var(--gray);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:2px">${label}</div><div style="font-family:'Cormorant Garamond',serif;font-size:18px;${color?`color:${color}`:''}">${val}</div></div>`;
+    sumEl.innerHTML = `
+      ${cell('Horas totales', `${Math.round(totalNew)}h <span style="font-size:11px;color:var(--gray)">de ${Math.round(totalOrig)}h</span>`)}
+      ${cell('Horas ahorradas', `${Math.round(saved)}h`, saved>0?'var(--green)':'var(--gray)')}
+      ${cell('Días laborales', `${sched ? sched.target : 0}d`)}
+      <div style="margin-left:auto;text-align:right">
+        <div style="color:var(--gray);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:2px">Fecha estimada</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:18px;color:${ok?'var(--green)':'var(--red)'}">${fmt}</div>
+        <div style="font-size:10px;color:${ok?'var(--green)':'var(--red)'};margin-top:2px">${ok?'✓ Dentro de la fecha del cliente':'⚠ Aún supera la fecha del cliente'}</div>
+      </div>`;
+  }
+}
+
+function resetCalibPlan() {
+  if (!_calibPlan || !_calibProj) return;
+  for (const p of _calibPlan) p.horas = p.originalHoras;
+  openTaskCalibrationModal(_calibProj, _calibPlan);
+}
+
+async function confirmCalibAndCreate() {
+  if (!_calibProj || !_calibPlan) return;
+  const proj = _calibProj, plan = _calibPlan;
+  _calibProj = null; _calibPlan = null;
+  await persistNewProject(proj, plan);
 }
 
 // ----------------------------------------
@@ -4054,11 +4197,11 @@ function renderCatalogEditor() {
           <input class="finput" id="ce-desc" value="${t.descripcion||''}" placeholder="Instrucciones para el responsable"></div>
         <div class="form-group" style="display:flex;flex-direction:column;gap:8px;justify-content:flex-end">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
-            <input type="checkbox" id="ce-cal" ${t.habilitar_cita?'checked':''} style="width:14px;height:14px">
+            <input type="checkbox" id="ce-cal" ${t.habilitar_cita!==false?'checked':''} style="width:14px;height:14px">
             📅 Habilitar "Enviar cita" (Google Calendar)
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px">
-            <input type="checkbox" id="ce-email" ${t.habilitar_email?'checked':''} style="width:14px;height:14px">
+            <input type="checkbox" id="ce-email" ${t.habilitar_email!==false?'checked':''} style="width:14px;height:14px">
             ✉ Habilitar "Enviar correo" a participantes
           </label>
         </div>
@@ -4198,7 +4341,7 @@ function createCatalogTask() {
   const nombre = document.getElementById('nc-nombre').value.trim();
   if (!nombre) { showToast('El nombre es obligatorio','error'); return; }
   const id = 'cat_'+Date.now();
-  catalogTareas.push({id, fase:'', nombre, rol_molvo:document.getElementById('nc-rol').value, rol_cliente:document.getElementById('nc-rolc').value, duracion_dias:parseInt(document.getElementById('nc-dur').value)||1, descripcion:'', campos:[]});
+  catalogTareas.push({id, fase:'', nombre, rol_molvo:document.getElementById('nc-rol').value, rol_cliente:document.getElementById('nc-rolc').value, duracion_dias:parseInt(document.getElementById('nc-dur').value)||1, descripcion:'', habilitar_cita:true, habilitar_email:true, campos:[]});
   saveCatalog();
   closeModal();
   renderCatalogList();
@@ -4573,8 +4716,13 @@ async function sendCalendarInvite(taskId) {
   const endDt = endLocal.getFullYear()+'-'+pad(endLocal.getMonth()+1)+'-'+pad(endLocal.getDate())+'T'+pad(endLocal.getHours())+':'+pad(endLocal.getMinutes())+':00';
 
   try {
-    if (!calendarReady || !(gapi.client && gapi.client.calendar)) {
-      showToast('Google Calendar no está disponible. Verifica que la API esté habilitada en tu proyecto de Google Cloud o cierra sesión y vuelve a entrar.','error');
+    const ready = await ensureCalendarLoaded();
+    if (!ready.ok) {
+      if (/disabled|has not been used|enable it/i.test(ready.message)) {
+        showToast('La API de Google Calendar no está habilitada en tu proyecto de Google Cloud. Habilítala en console.cloud.google.com y recarga.','error');
+      } else {
+        showToast('No se pudo cargar Google Calendar: '+ready.message,'error');
+      }
       return;
     }
     const event = {
@@ -4589,9 +4737,12 @@ async function sendCalendarInvite(taskId) {
     closeModal();
     showToast('Evento creado y enviado a '+attendees.length+' participante(s) ✓','success');
   } catch(e) {
-    const msg = e.result?.error?.message || e.message || '';
-    if (e.result?.error?.status === 'PERMISSION_DENIED' || /insufficient|scope|permission/i.test(msg)) {
-      showToast('Falta permiso de Google Calendar. Cierra sesión y vuelve a entrar para autorizarlo.','error');
+    const msg = e?.result?.error?.message || e?.message || String(e);
+    const status = e?.result?.error?.status || '';
+    if (status === 'PERMISSION_DENIED' || /insufficient|scope/i.test(msg)) {
+      showToast('Falta el permiso de Google Calendar. Cierra sesión y vuelve a entrar para autorizarlo.','error');
+    } else if (/disabled|has not been used|enable it/i.test(msg)) {
+      showToast('Habilita la API de Google Calendar en tu proyecto de Google Cloud y vuelve a intentar.','error');
     } else {
       showToast('Error creando evento: '+msg,'error');
     }
