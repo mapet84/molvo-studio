@@ -2621,13 +2621,14 @@ function findTipoKey(tipo) {
 }
 
 function getDefaultTipoTasks() {
-  // All types start with same standard tasks but can be customized
+  // All types start with same standard tasks but can be customized.
+  // STANDARD_TASKS.duracion is already in HOURS, so don't multiply by 8.
   const base = {};
   getProjectTypes().forEach(tipo => {
     base[tipo] = (STANDARD_TASKS || []).map((t,i) => ({
       ...t, _id: tipo+'_'+i, dependencias: '',
       roles: [t.rol, '', ''], // up to 3 roles
-      horas: (t.duracion||1) * 8
+      horas: (t.duracion||8)
     }));
   });
   return base;
