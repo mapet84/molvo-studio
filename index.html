@@ -1982,17 +1982,6 @@ function getTaskRolesList(task) {
   if (!task || !task.rol) return [];
   return task.rol.split(',').map(r => r.trim()).filter(Boolean);
 }
-function getTaskAssignedIds(task, overrideStr) {
-  // Returns array aligned with getTaskRolesList(task). Empty slot = ''.
-  const roles = getTaskRolesList(task);
-  const raw = (overrideStr != null ? overrideStr : (task?.usuario_id || ''));
-  const ids = raw.split(',').map(s => s.trim());
-  while (ids.length < roles.length) ids.push('');
-  return ids.slice(0, Math.max(1, roles.length));
-}
-function joinAssignedIds(ids) {
-  return ids.map(s => (s||'').trim()).join(',');
-}
 function getUserRolesList(user) {
   return (user?.roles||'').split(',').map(r => r.trim()).filter(Boolean);
 }
@@ -2001,39 +1990,22 @@ function userCoversRole(user, role) {
   const target = normRoleStr(role);
   return getUserRolesList(user).some(r => normRoleStr(r) === target);
 }
-// Returns the array of usuario objects assigned to a task (one per
-// role slot; nulls dropped). Used by Cita/Correo/task-detail consumers.
-function getAssignedUsersForTask(task) {
-  const ids = getTaskAssignedIds(task);
-  return ids.map(id => id ? DB.usuarios.find(u => u.id === id) : null).filter(Boolean);
+// Each task has a SINGLE responsable. task.usuario_id is one id. Legacy
+// data may have a comma-separated value from an older version of the
+// app; we tolerate it by taking the first non-empty slot.
+function getSavedAssigneeId(task) {
+  if (!task?.usuario_id) return '';
+  return String(task.usuario_id).split(',').map(s => s.trim()).find(Boolean) || '';
 }
-// "Primary" responsable for single-avatar displays: first non-empty id.
 function getPrimaryAssignedUser(task) {
-  const ids = getTaskAssignedIds(task);
-  for (const id of ids) {
-    if (id) {
-      const u = DB.usuarios.find(u => u.id === id);
-      if (u) return u;
-    }
-  }
-  return null;
+  const id = getSavedAssigneeId(task);
+  return id ? (DB.usuarios.find(u => u.id === id) || null) : null;
 }
-// Build a {role → userId} map from already-assigned tasks in this
-// project so the resource modal can pre-fill recurring roles (e.g. the
-// same Director across every task that needs Director).
-function buildProjectRoleAssignmentMap(proyId, currentPending) {
-  const map = {};
-  const projTasks = DB.tareas.filter(t => t.proyecto_id === proyId);
-  for (const t of projTasks) {
-    const roles = getTaskRolesList(t);
-    const pendOverride = currentPending && currentPending[t.id];
-    const ids = getTaskAssignedIds(t, pendOverride);
-    roles.forEach((r, i) => {
-      const norm = normRoleStr(r);
-      if (ids[i] && !map[norm]) map[norm] = { role: r, userId: ids[i] };
-    });
-  }
-  return map;
+// Kept for callers that iterate (Cita/Correo) — returns the single
+// assignee as a 1-element array, or empty.
+function getAssignedUsersForTask(task) {
+  const u = getPrimaryAssignedUser(task);
+  return u ? [u] : [];
 }
 
 
@@ -2152,39 +2124,45 @@ function openResponsableUtilizationModal() {
 function openResourceAssignmentModal(proyId, mode) {
   // pendingAssignments now stores per-role decisions for the whole
   // project (not per task). Shape: { normRole: { display, userId } }.
-  // Saving walks every task in the project and fills its role slots
-  // from this map, so "Director = Andrea" applies to every task that
-  // needs Director — no need to repeat the choice task by task.
+  // Saving walks every task in the project; for each task we pick a
+  // single responsable by walking the task's role list in priority
+  // order and taking the first role that has a person assigned in this
+  // map. So "Director = Andrea" applies to every task that lists
+  // Director — and for tasks listing both Director and Responsable
+  // (alternatives), Director wins because it's role #1.
   currentResProjId = proyId;
   currentResMode = mode;
   pendingAssignments = {};
   const proj = DB.proyectos.find(p=>p.id===proyId);
   if (!proj) return;
-  const fases = mode==='early' ? FASES_EARLY : FASES_LATE;
-  const modeTasks = DB.tareas.filter(t=>t.proyecto_id===proyId && fases.includes(t.fase));
+  // The roles aggregation is project-wide — every task counts, not
+  // just the ones in the current phase mode. This way nothing gets
+  // left without a responsable just because it's in a different fase.
+  const projectTasks = DB.tareas.filter(t=>t.proyecto_id===proyId);
 
-  // Pre-fill from existing assignments across ALL project tasks (any
-  // phase). This way the late-phase modal already shows whoever was
-  // chosen in the early modal, and edits made manually on a task are
-  // also reflected here.
-  const allProjTasks = DB.tareas.filter(t=>t.proyecto_id===proyId);
-  for (const t of allProjTasks) {
+  // Pre-fill: walk each task that already has a saved responsable and
+  // figure out which of the task's possible roles that person actually
+  // covers. If they cover exactly one of the task's roles → map them
+  // to that role. If they cover several or none → default to role #1
+  // (the priority role).
+  for (const t of projectTasks) {
     const roles = getTaskRolesList(t);
-    const ids = getTaskAssignedIds(t);
-    roles.forEach((r, i) => {
-      const norm = normRoleStr(r);
-      if (ids[i] && !pendingAssignments[norm]) {
-        pendingAssignments[norm] = { display: r, userId: ids[i] };
-      }
-    });
+    const uid = getSavedAssigneeId(t);
+    if (!uid || !roles.length) continue;
+    const u = DB.usuarios.find(x => x.id === uid);
+    if (!u) continue;
+    const covered = roles.filter(r => userCoversRole(u, r));
+    const targetRole = covered.length === 1 ? covered[0] : roles[0];
+    const norm = normRoleStr(targetRole);
+    if (!pendingAssignments[norm]) {
+      pendingAssignments[norm] = { display: targetRole, userId: uid };
+    }
   }
 
   const title = mode==='early'
-    ? 'Asignar responsables — Fases 1 a 3'
-    : 'Proyecto aprobado — Asignar responsables Fases 4 a 7';
-  const subtitle = mode==='early'
-    ? 'Elige una persona por rol. Todas las tareas del proyecto que requieran ese rol quedarán asignadas a esa persona.'
-    : 'Asigna una persona por cada rol de producción y post-producción. Aplica a todas las tareas del proyecto que requieran ese rol.';
+    ? 'Asignar responsables del proyecto'
+    : 'Proyecto aprobado — Verifica responsables';
+  const subtitle = 'Elige una persona por rol. El sistema aplica la asignación a cada tarea que requiera ese rol. Si una tarea tiene varios roles posibles, gana el rol con mayor prioridad (rol 1).';
 
   document.getElementById('modal-body').innerHTML = `
     <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:400;margin-bottom:3px">${title}</div>
@@ -2198,8 +2176,8 @@ function openResourceAssignmentModal(proyId, mode) {
       </div>
     </div>`;
 
-  renderResRoleList(modeTasks, proj);
-  updateResCount(modeTasks);
+  renderResRoleList(projectTasks, proj);
+  updateResCount(projectTasks);
   document.getElementById('modal-body').classList.add('wide');
   document.getElementById('modal-overlay').classList.add('open');
 }
@@ -2228,10 +2206,10 @@ function aggregateProjectRoles(tasks, proj) {
   return Object.values(map).sort((a, b) => a.sortKey - b.sortKey);
 }
 
-function renderResRoleList(modeTasks, proj) {
+function renderResRoleList(projectTasks, proj) {
   const el = document.getElementById('res-role-list');
   if (!el) return;
-  const roleEntries = aggregateProjectRoles(modeTasks, proj);
+  const roleEntries = aggregateProjectRoles(projectTasks, proj);
 
   if (!roleEntries.length) {
     el.innerHTML = `<div style="font-size:12px;color:var(--gray);padding:24px;text-align:center">No hay roles configurados en las tareas de esta fase. Define los roles en Tipos de proyecto.</div>`;
@@ -2284,10 +2262,9 @@ function assignRole(normRole, userId, displayRole) {
     delete pendingAssignments[normRole];
   }
   const proj = DB.proyectos.find(p => p.id === currentResProjId);
-  const fases = currentResMode==='early' ? FASES_EARLY : FASES_LATE;
-  const modeTasks = DB.tareas.filter(t => t.proyecto_id===currentResProjId && fases.includes(t.fase));
-  renderResRoleList(modeTasks, proj);
-  updateResCount(modeTasks);
+  const projectTasks = DB.tareas.filter(t => t.proyecto_id===currentResProjId);
+  renderResRoleList(projectTasks, proj);
+  updateResCount(projectTasks);
 }
 
 // + Nuevo recurso, with the role of the current row pre-filled.
@@ -2339,28 +2316,29 @@ async function saveResourceAndReturnToRoleModal(proyId, mode, roleName) {
     openResourceAssignmentModal(proyId, mode);
     pendingAssignments[normRoleStr(roleName)] = { display: roleName, userId: id };
     const proj = DB.proyectos.find(p => p.id === proyId);
-    const fases = mode==='early' ? FASES_EARLY : FASES_LATE;
-    const modeTasks = DB.tareas.filter(t => t.proyecto_id===proyId && fases.includes(t.fase));
-    renderResRoleList(modeTasks, proj);
-    updateResCount(modeTasks);
+    const projectTasks = DB.tareas.filter(t => t.proyecto_id===proyId);
+    renderResRoleList(projectTasks, proj);
+    updateResCount(projectTasks);
   }, 50);
 }
 
-function updateResCount(modeTasks) {
+function updateResCount(projectTasks) {
   const el = document.getElementById('res-assign-count');
   if (!el) return;
   const proj = DB.proyectos.find(p => p.id === currentResProjId);
   if (!proj) return;
-  const roleEntries = aggregateProjectRoles(modeTasks, proj);
+  const roleEntries = aggregateProjectRoles(projectTasks, proj);
   const total = roleEntries.length;
   const done = roleEntries.filter(re => pendingAssignments[re.norm]?.userId).length;
   el.textContent = done+'/'+total+' roles asignados';
   el.style.color = done===total && total>0 ? 'var(--green)' : 'var(--gray)';
 }
 
-// Save: walk every task in the project and apply the role → user map.
-// Tasks whose roles aren't in the pending map keep their existing
-// assignment for that slot (so partial assignments don't get wiped).
+// Save: walk every task in the project. For each task, scan its roles
+// in priority order (rol 1 first); the first role that has a person
+// assigned in pendingAssignments wins. The task gets that single user
+// as its responsable. If none of the task's roles is assigned, the
+// task is left empty so the user notices it's pending.
 async function saveAllAssignments(proyId) {
   if (!Object.keys(pendingAssignments).length) { closeModal(); return; }
   showToast('Guardando asignaciones...', 'info');
@@ -2369,19 +2347,14 @@ async function saveAllAssignments(proyId) {
   for (const task of projTasks) {
     const roles = getTaskRolesList(task);
     if (!roles.length) continue;
-    const currentIds = getTaskAssignedIds(task);
-    let changed = false;
-    const newIds = roles.map((r, i) => {
+    let chosen = '';
+    for (const r of roles) {
       const hit = pendingAssignments[normRoleStr(r)];
-      if (hit && hit.userId) {
-        if (currentIds[i] !== hit.userId) changed = true;
-        return hit.userId;
-      }
-      // Role not in pending map → keep whatever was there before.
-      return currentIds[i] || '';
-    });
-    if (changed) {
-      task.usuario_id = joinAssignedIds(newIds);
+      if (hit && hit.userId) { chosen = hit.userId; break; }
+    }
+    const currentId = getSavedAssigneeId(task);
+    if (currentId !== chosen) {
+      task.usuario_id = chosen;
       const rowNum = getRowNum('tareas', task.id);
       if (rowNum >= 0) {
         await sheetsUpdate('tareas', rowNum, SHEET_HEADERS.tareas.map(h=>task[h]||''));
